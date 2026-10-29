@@ -1,163 +1,147 @@
-# musicsearcher
+# MusicSync
 
-A self-hosted .NET backend for music library management, ripping, and metadata tagging. 
-Transforms audio from various sources into organized, tagged files for use with media 
-servers like Navidrome or Jellyfin.
+MusicSync is a self-hosted .NET backend for discovering, importing, and organizing music. It brings together metadata services, audio acquisition, transcoding, tagging, and library management for personal media servers such as Navidrome and Jellyfin.
 
-## Project Idea
+> **Project status:** MusicSync is an active work in progress. Some planned API, playlist, analytics, and UI features are still being developed.
 
-musicsearcher implements the core idea from **FreeListen** (by [Alextheguy1](https://github.com/Alextheguy1)), 
-a Node/Express project for music search and download, reimplementing it in **C# / .NET** with 
-significant improvements focused on correctness, maintainability, and proper multi-artist 
-attribution.
+## Inspiration
 
-The original FreeListen took the first `ytsearch1` result without scoring or review, had an 
-in-memory queue, and created composite artist names (e.g., "A+B") for multi-artist tracks. 
-This project fixes those issues with:
+MusicSync was inspired by [FreeListen](https://github.com/Alextheguy1/FreeListen), created by [Alextheguy1](https://github.com/Alextheguy1). FreeListen established the original direction and demonstrated how a simple music search and download experience could be built with a web application.
 
-- **Multi-candidate search + scoring** - evaluates up to 5 candidates per track using duration,
-  title similarity, and artist name matching
-- **Persisted queue** - job queue in SQLite, resumable after restart
-- **Server-side MusicBrainz client** - with global 1 request/second rate limiter and proper 
-  User-Agent headers
-- **SSE progress** - real-time job progress streaming
-- **Proper multi-artist attribution** - uses `ArtistCredit` records so tracks appear in ALL 
-  artist indexes (fixes the "composite artist C (a+b)" bug)
-- **TagLibSharp integration** - tags files with MBIDs, cover art, and full metadata
-- **Docker packaging** - includes ffmpeg, yt-dlp, and Deno
+This project explores the same broader idea in C# and .NET, with an emphasis on maintainable service boundaries, persistent jobs, canonical metadata, and a foundation that can grow over time. The projects serve different technical goals and are not intended to be direct replacements for one another.
 
-## What It Does
+Thank you to the FreeListen project and its contributors for the inspiration.
 
-1. **Search** music by song, album, or artist using MusicBrainz canonical metadata
-2. **Import** from public Spotify playlists (Client Credentials flow, no user OAuth)
-3. **Find audio sources** and download via yt-dlp
-4. **Convert/transcode** audio using ffmpeg (MP3, FLAC, Opus, M4A)
-5. **Tag** files with complete MusicBrainz metadata (MBIDs, cover art, artist credits)
-6. **Organize** library in server-friendly layout: `{LibraryRoot}/{Artist}/{Album}/{NN} - {Title}.{ext}`
-7. **Track jobs** with persistence, resumability, and progress events
-8. **Provide analytics** on library completeness, top artists, success/failure rates
+## What MusicSync Does
 
-## Technology Stack
+The planned workflow is:
 
-| Concern | Choice |
+1. Search for music using canonical MusicBrainz metadata.
+2. Import tracks from supported public playlists.
+3. Find candidate audio sources through an acquisition provider.
+4. Score candidates using title, artist, and duration information.
+5. Download and transcode audio with `yt-dlp` and `ffmpeg`.
+6. Apply metadata, MBIDs, artist credits, and cover art.
+7. Organize files in a media-server-friendly library layout.
+8. Track jobs with persistence, resumability, and progress reporting.
+
+## Highlights
+
+- Canonical metadata through MusicBrainz.
+- Multi-candidate matching with configurable scoring thresholds.
+- Persisted, resumable download jobs backed by SQLite.
+- Multi-artist attribution through artist credits.
+- Safe library path resolution and filename sanitization.
+- SHA-256 and metadata-based deduplication foundations.
+- Server-Sent Events (SSE) planned for live progress updates.
+- External integrations kept behind interfaces where practical.
+- Docker packaging planned for the complete audio toolchain.
+
+## Technology
+
+| Area | Technology |
 |---|---|
-| Runtime | .NET 8+ (LTS), C# with nullable reference types |
-| Web | ASP.NET Core minimal APIs, HTTPS only |
-| Persistence | EF Core + SQLite (Postgres-compatible schema) |
-| Background work | `BackgroundService` + `System.Threading.Channels`, jobs in SQLite |
-| Realtime progress | Server-Sent Events (SSE) |
-| Audio download | yt-dlp via custom acquisition provider |
-| Transcoding | ffmpeg (external binary, required) |
-| Tagging | TagLibSharp (with MBIDs and embedded cover) |
-| HTTP clients | `IHttpClientFactory`, Polly resilience handlers |
-| Rate limiting | `System.Threading.RateLimiting` |
-| Logging | `ILogger`, structured templates |
-| Tests | xUnit, FluentAssertions |
-| Packaging | Docker image (ffmpeg, yt-dlp, Deno) |
+| Runtime | .NET 8 (with .NET 10 upgrade work tracked separately) |
+| Language | C# with nullable reference types |
+| Web API | ASP.NET Core |
+| Persistence | Entity Framework Core + SQLite |
+| Background work | `BackgroundService` + `System.Threading.Channels` |
+| Audio acquisition | `yt-dlp` through an acquisition provider |
+| Transcoding | `ffmpeg` |
+| Tagging | TagLibSharp |
+| Metadata | MusicBrainz, ListenBrainz, and Spotify integrations |
+| Tests | xUnit |
 
 ## Architecture
 
+```text
+Web client / API
+        │
+        ▼
+ASP.NET Core API ───────► Persistent job queue (SQLite)
+                              │
+                              ▼
+                      Background worker
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │ MusicBrainz         │ Spotify / playlists  │
+        │ ListenBrainz        │ Audio providers      │
+        └─────────────────────┴─────────────────────┘
 ```
-Web UI / API ────────► ASP.NET Core API ────────► Job Queue (SQLite)
-                                                 │
-                                                 ▼
-                                          Worker (BackgroundService)
-                                                 │
-        ┌───────────────────────────────────────┼─────────────────────────────────────┐
-        │ MusicBrainz          ListenBrainz     Cover Art Archive     Spotify (public) │
-        └───────────────────────────────────────┴─────────────────────────────────────┘
+
+## Project Layout
+
+```text
+MusicSync/
+├── Core/            # Domain models, interfaces, matching, and path logic
+├── Infrastructure/  # Persistence models and external-service infrastructure
+├── Worker/          # Background processing and acquisition workflow
+└── ../MusicSync.Api/ # HTTP API and controllers
+tests/
+├── MusicSync.Core.Tests/
+└── MusicSync.Infrastructure.Tests/
 ```
 
-## Milestones Status
+## Progress
 
-| Milestone | Description | Status |
-|---|---|---|
-| **M1 Skeleton** | Solution layout, DI, EF Core + SQLite, health endpoint, auth setup | ✅ Completed |
-| **M2 Metadata** | MusicBrainz client, search endpoints, cover art | ⏳ Not yet started |
-| **M3 Pipeline** | Job entity, persisted queue, worker, yt-dlp provider, ffmpeg transcode, TagLibSharp tagging, LibraryPathResolver | ✅ Completed |
-| **M4 Matching** | Scorer with unit tests, review state, approve/cancel endpoints | ⏳ Not yet started |
-| **M5 Playlists** | Spotify public playlist import, ListenBrainz top recordings | ⏳ Not yet started |
-| **M6 Realtime** | SSE, library listing/deletion, dedupe by hash and MBID | ⏳ Not yet started |
-| **M7 Analytics** | Summary endpoints, Dockerfile, docs, CI | ⏳ Not yet started |
-| **M8 UI** | Minimal static frontend (Search, Activity, Library, Settings) | ⏳ Not yet started |
-
-## Key Features
-
-- **Multi-artist support** via `ArtistCredit` records - tracks appear in ALL artist indexes, 
-  avoiding the "composite artist C (a+b)" bug
-- **Multi-candidate scoring** - evaluates up to 5 download candidates per track using duration, 
-  title similarity, and artist name matching
-- **Persisted job queue** - SQLite-backed, resumable after restart with full progress tracking
-- **Path safety** - all user-supplied path components sanitized and verified against library root
-- **No shell injection** - uses `ProcessStartInfo.ArgumentList`, never string concatenation for commands
-- **Rate-limited external API calls** - 1 request/second global limiter for MusicBrainz
-- **Configurable library layout** - `{LibraryRoot}/{Artist}/{Album}/{NN} - {Title}.{ext}` or singles mode
-- **Dedup by MBID → path → SHA-256** - prevents duplicate files
-- **SSE progress streaming** - real-time job progress from the worker
-- **Full configuration** via `appsettings.json` and environment variables
+| Area | Status |
+|---|---|
+| Core project and domain foundations | ✅ In progress |
+| SQLite persistence and entity model | ✅ In progress |
+| Background worker and acquisition flow | ✅ In progress |
+| Candidate matching and scoring | ✅ Implemented |
+| MusicBrainz integration | 🚧 In progress |
+| Playlist imports | ⏳ Planned |
+| Realtime progress and library endpoints | ⏳ Planned |
+| Analytics and container packaging | ⏳ Planned |
+| Web UI | ⏳ Planned |
 
 ## Configuration
 
-Bind via `IOptions<T>` from `appsettings.json` and environment variables:
+Settings can be supplied through `appsettings.json` or environment variables:
 
-```
+```text
 Library__Root=/music
-Config__Dir=/config
-Audio__Format=mp3            # mp3|flac|opus|m4a
-Audio__Quality=0             # encoder quality, meaning depends on format
+Audio__Format=mp3                 # mp3|flac|opus|m4a
+Audio__Quality=0
 Matching__AutoAcceptThreshold=0.80
 Matching__ReviewThreshold=0.50
 Matching__DurationToleranceSeconds=5
 Worker__Concurrency=1
-MusicBrainz__UserAgent=MusicSync/0.1 ( you@example.com )
-ListenBrainz__Token=         # optional
-Spotify__ClientId=           # optional
-Spotify__ClientSecret=       # optional
-Auth__Disable=false          # only behind an authenticating reverse proxy
+MusicBrainz__UserAgent=MusicSync/0.1 (you@example.com)
+ListenBrainz__Token=              # optional
+Spotify__ClientId=                # optional
+Spotify__ClientSecret=            # optional
+Auth__Disable=false               # use only behind a trusted proxy
 ```
-
-## Legal Disclaimer
-
-Downloading audio from YouTube or SoundCloud may violate their Terms of Service and may 
-infringe copyright depending on jurisdiction. This project is for **personal use only**.
-
-The acquisition step sits behind an interface (`IAcquisitionProvider`). The default 
-implementation uses yt-dlp. Users are responsible for complying with applicable laws and 
-Terms of Service.
 
 ## Development
 
+The commands below should be run from the repository root. On immutable systems such as Bazzite, a development container or Distrobox is a convenient way to provide the required .NET runtime and SDK.
+
+```bash
+# Restore dependencies
+dotnet restore
+
+# Build an individual project
+dotnet build MusicSync/Core/MusicSync.Core.csproj
+
+# Run tests
+dotnet test tests/MusicSync.Core.Tests/MusicSync.Core.Tests.csproj
+dotnet test tests/MusicSync.Infrastructure.Tests/MusicSync.Infrastructure.Tests.csproj
+
+# Run the API when its current dependencies are available
+dotnet run --project MusicSync.Api/MusicSync.Api.csproj
 ```
-# Build all projects
-dotnet build
 
-# Run tests (compile only, execution requires .NET 8 runtime)
-dotnet test
+## Legal Notice
 
-# Run the API project
-dotnet run --project MusicSync.Api
-```
+Audio availability and downloading may be subject to the terms of service of external providers and to copyright law. MusicSync is intended for lawful personal use. Users are responsible for complying with applicable laws and service terms.
 
-## Credits
+The acquisition layer is defined behind an interface so that users can choose an implementation appropriate for their environment and use case.
 
-**Design inspiration and reference project:** [FreeListen](https://github.com/Alextheguy1/FreeListen) 
-by [Alextheguy1](https://github.com/Alextheguy1) - a Node/Express implementation that 
-inspired the core idea of this project.
+## Acknowledgements
 
-This project reimplements the same concept in **C# / .NET** with the improvements listed 
-in [PROJECT_CONTEXT.md section 9](PROJECT_CONTEXT.md#9-improvements-over-the-reference-project):
+Special thanks to [Alextheguy1](https://github.com/Alextheguy1) and the [FreeListen](https://github.com/Alextheguy1/FreeListen) project for the original inspiration.
 
-| Reference (FreeListen) | This project |
-|---|---|
-| Takes first `ytsearch1` result | Multi-candidate search + scoring + review state |
-| In-memory queue and activity log | Persisted queue and history in SQLite |
-| MusicBrainz called from browser | Server-side client with 1 rps limiter, User-Agent, caching |
-| UI polls for activity | SSE/SignalR push |
-| Spotify embed scraping / unofficial lib | Official API (Client Credentials), fallback optional |
-| ffmpeg `-metadata` for tagging | TagLibSharp, plus MBIDs in tags |
-| Dedupe by sanitized title | Dedup by MBID, then path, then SHA-256 |
-| **Creates composite artist C (a+b)** | **Proper multi-artist attribution via ArtistCredit records** |
-
----
-
-*Working name: MusicSync - rename freely as needed.*
+MusicSync is an independent project that builds on that inspiration while exploring its own architecture and implementation choices.

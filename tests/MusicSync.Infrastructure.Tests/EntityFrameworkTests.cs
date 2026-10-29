@@ -84,7 +84,7 @@ public class EntityFrameworkTests
 
         // Assert
         Assert.Equal(64, file.Sha256.Length);
-        Assert.Contains(file.RelativePath, "Artist");
+        Assert.Contains("Artist", file.RelativePath);
     }
 
     [Fact]

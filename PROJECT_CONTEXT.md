@@ -302,11 +302,11 @@ Auth__Disable=false          # only behind an authenticating reverse proxy
 
 ## 14. Milestones
 
-1. **M1 Skeleton:** solution layout, DI, EF Core + SQLite, health endpoint, auth setup/login. ✅ Partially - solution layout and project structure implemented, Core library with domain models including multi-artist TrackInfo.
-2. **M2 Metadata:** MusicBrainz client (rate limiter, UA, cache) + search endpoints + cover art. ⏳ Not yet started.
-3. **M3 Pipeline:** job entity, persisted queue, worker, `YtDlpAcquisitionProvider`, ffmpeg transcode, TagLibSharp tagging, **library path resolver with traversal tests**. ✅ Completed - `LibraryPathResolver` with multi-artist support and path sanitization per section 11.
-4. **M4 Matching:** scorer with unit tests, review state, approve/cancel endpoints. ⏳ Not yet started.
-5. **M5 Playlists and top-N:** Spotify public playlist import, ListenBrainz top recordings.
+1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, and metadata-client DI. 🚧 In progress - authentication, health endpoint, SQLite registration, and migrations remain.
+2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients with JSON parsing, API composition, and fixture-based tests. 🚧 In progress - cover-art retrieval, cache correctness, and broader endpoint tests remain.
+3. **M3 Pipeline:** job entity, persisted queue, worker, `YtDlpAcquisitionProvider`, ffmpeg transcode, TagLibSharp tagging, **library path resolver with traversal tests**. 🚧 Scaffolded - path tests and queue structure exist, but real acquisition, tagging, persistence wiring, and resumability remain.
+4. **M4 Matching:** scorer with unit tests, review state, approve/cancel endpoints. ✅ Core scorer and tests implemented; review endpoints and best-candidate selection remain.
+5. **M5 Playlists and top-N:** Spotify public playlist and ListenBrainz parsing foundations implemented; end-to-end track mapping and import workflow remain.
 6. **M6 Realtime and library:** SSE, library listing/deletion, dedupe by hash and MBID.
 7. **M7 Analytics and packaging:** summary endpoints, Dockerfile (ffmpeg, yt-dlp, Deno), docs, CI.
 8. **M8 UI:** minimal static frontend (Search, Activity, Library, Settings).

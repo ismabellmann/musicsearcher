@@ -86,12 +86,13 @@ tests/
 
 | Area | Status |
 |---|---|
-| Core project and domain foundations | ✅ In progress |
-| SQLite persistence and entity model | ✅ In progress |
-| Background worker and acquisition flow | ✅ In progress |
+| Core project and domain foundations | ✅ Implemented |
+| SQLite persistence and entity model | 🚧 In progress |
+| Background worker and acquisition flow | 🚧 Scaffolded |
 | Candidate matching and scoring | ✅ Implemented |
-| MusicBrainz integration | 🚧 In progress |
-| Playlist imports | ⏳ Planned |
+| MusicBrainz, ListenBrainz, and Spotify parsing | ✅ Implemented with tests |
+| Search and playlist API integration | 🚧 In progress |
+| Playlist imports and track mapping | ⏳ Planned |
 | Realtime progress and library endpoints | ⏳ Planned |
 | Analytics and container packaging | ⏳ Planned |
 | Web UI | ⏳ Planned |

@@ -6,4 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../MusicSync/Core/MusicSync.Core.csproj" />
+    <ProjectReference Include="../MusicSync/Infrastructure/MusicSync.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>

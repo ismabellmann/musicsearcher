@@ -28,19 +28,20 @@ public class LibraryPathResolver : ILibraryPathResolver
         // Use primary artist only to avoid composite artist issues
         // The track will be indexed under the primary artist, but MBIDs link to all artists
         var artistString = primaryArtist;
+        var extensionValue = extension.StartsWith('.') ? extension : $".{extension}";
 
         if (asSingle || track.IsSingle)
         {
             // Single track format: {LibraryRoot}/{Artist}/{Title}.{ext}
             // Use primary artist to avoid the "A+B=C" composite artist bug
-            return $"{LibraryRootPlaceholder}/{{artist}}/{{title}}{{extension}}";
+            return $"{LibraryRootPlaceholder}/{artistString}/{title}{extensionValue}";
         }
 
         // Album track format: {LibraryRoot}/{Artist}/{Album}/{NN} - {Title}.{ext}
         var album = SanitizeFileName(track.AlbumTitle ?? "UnknownAlbum");
         var nn = trackNumber > 0 ? $"{trackNumber:D2}" : "00";
 
-        return $"{LibraryRootPlaceholder}/{{artist}}/{{album}}/{{nn}} - {{title}}{{extension}}";
+        return $"{LibraryRootPlaceholder}/{artistString}/{album}/{nn} - {title}{extensionValue}";
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using MusicSync.Api.Models;
 using MusicSync.Core;
 using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
@@ -24,13 +25,19 @@ public class SearchController : ControllerBase
     }
 
     [HttpGet]
-    [ProducesResponseType(typeof(IReadOnlyList<TrackInfo>), 200)]
-    [ProducesResponseType(400)]
-    public async Task<IActionResult> Get(string type, string q, string? sort, CancellationToken ct)
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<TrackInfo>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<TrackInfo>>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<TrackInfo>>>> Get(
+        string type,
+        string q,
+        string? sort,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(q))
         {
-            return BadRequest("Query parameter 'q' is required");
+            return BadRequest(ApiResponse<IReadOnlyList<TrackInfo>>.Failure(
+                StatusCodes.Status400BadRequest,
+                "El parámetro de búsqueda 'q' es obligatorio."));
         }
 
         _logger.LogInformation("Search request: type={Type}, query={Query}, sort={Sort}", type, q, sort);
@@ -48,6 +55,9 @@ public class SearchController : ControllerBase
             _logger.LogInformation("Enriching {Count} search results with popularity data", results.Count);
         }
 
-        return Ok(results);
+        return Ok(ApiResponse<IReadOnlyList<TrackInfo>>.Success(
+            StatusCodes.Status200OK,
+            "Búsqueda completada exitosamente.",
+            results));
     }
 }

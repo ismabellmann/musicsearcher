@@ -16,7 +16,7 @@ A self-hosted, single-user **.NET backend** (with a minimal web UI added later) 
 4. Tracks jobs, history and basic **analytics** (top artists, failures, library completeness).
 
 Reference project (design inspiration, Node/Express): https://github.com/Alextheguy1/FreeListen
-This project reimplements the same idea in **C# / .NET** with improvements listed in section 9.
+FreeListen's core user value is searching MusicBrainz or public Spotify playlists and saving tagged, organized audio to a personal library, with background queue/activity, library management, and settings. This project follows that product direction in **C# / .NET**, but is currently a backend foundation rather than a feature-complete equivalent. Improvements and differences are listed in section 9.
 
 ## 2. Non-goals
 
@@ -27,12 +27,12 @@ This project reimplements the same idea in **C# / .NET** with improvements liste
 
 ## 3. Legal / ToS note (design constraint)
 
-Downloading audio from YouTube or SoundCloud violates their Terms of Service and may infringe copyright depending on jurisdiction. The project is for **personal use**.
+Downloading audio from YouTube or SoundCloud may violate their Terms of Service and may infringe copyright depending on jurisdiction. Describing the project as personal-use software does not grant permission to download a source; users must have the necessary rights and comply with applicable law and provider terms.
 
 Therefore:
 
 - The acquisition step MUST sit behind an interface (`IAcquisitionProvider`). Nothing outside that provider may reference YouTube, SoundCloud or yt-dlp.
-- Ship a `YtDlpAcquisitionProvider` as the default implementation, and design for additional providers (local import, Bandcamp downloads the user owns, Internet Archive, Jamendo, Free Music Archive).
+- Keep acquisition providers replaceable; support only sources the user is authorized to acquire. The owner selected yt-dlp as an intended provider, but implementation and use must remain subject to law and service terms. Other possible providers include local import and sources the user owns or is authorized to download.
 - The README MUST include a short disclaimer that users are responsible for complying with applicable laws and ToS.
 
 ## 4. Tech stack
@@ -42,7 +42,7 @@ Therefore:
 | Runtime | .NET 8+ (LTS), C# with nullable reference types enabled |
 | Web | ASP.NET Core minimal APIs, HTTPS only |
 | Persistence | EF Core + SQLite (Postgres-compatible schema; avoid SQLite-only features) |
-| Background work | `BackgroundService` + `System.Threading.Channels`, jobs persisted in DB |
+| Background work | `BackgroundService` polling persisted SQLite jobs in FIFO order |
 | Realtime progress | Server-Sent Events (or SignalR) |
 | Audio download | `yt-dlp` via `YoutubeDLSharp` or `Process` with `ArgumentList` |
 | Transcoding | `ffmpeg` (external binary, required) |
@@ -166,7 +166,7 @@ public interface ILibraryPathResolver         // single place that builds and va
   - `GetPrimaryArtistName()` - returns first artist name
   - `GetPrimaryArtistMbid()` - returns first artist MBID
 
-`DownloadJob.Status`: `Queued`, `Resolving`, `Searching`, `NeedsReview`, `Downloading`, `Tagging`, `Done`, `Failed`, `Cancelled`.
+`DownloadJob.Status`: `Queued`, `Resolving`, `Searching`, `NeedsReview`, `Approved`, `Downloading`, `Tagging`, `ReadyForTagging`, `Done`, `Failed`, `Cancelled`.
 
 Use **MusicBrainz IDs (MBIDs)** as canonical identifiers wherever possible.
 
@@ -202,13 +202,27 @@ Do **not** blindly take the first result.
 
 `IMatchScorer` MUST be pure and covered by table-driven unit tests.
 
+Known implementation gaps to address before relying on scores:
+
+- The current artist-score calculation returns zero; candidate/channel artist matching is not implemented.
+- Candidate penalty evaluation does not receive the target title, so it cannot exempt features that are present in the requested track.
+- The current worker stores only the single best candidate. It does not expose a candidate list or allow the user to select among alternatives.
+- Verify and correct these scorer behaviors with focused tests before connecting automatic acceptance to a real acquisition pipeline.
+
 ### 8.5 Queue / worker
-- Endpoints enqueue and return immediately (`202 Accepted` + job id).
-- A single worker (configurable concurrency, default **1**) drains the queue. Throttling avoids provider rate limits.
-- Jobs are **persisted** and **resumable** after restart (re-enqueue `Queued`/`Resolving`/`Searching`/`Downloading` on startup).
-- Retry transient failures with exponential backoff (max 2 retries by default).
-- Idempotent: if the target file already exists (same MBID or same sanitized `Artist/Album/Title`), skip and mark `Done` with note `AlreadyExists`.
-- Publish progress over SSE.
+- `POST /api/downloads` accepts one track and returns immediately (`202 Accepted` + job id).
+- The current hosted worker polls SQLite and processes the oldest `Queued` job first (FIFO, concurrency 1).
+- Track and job creation are persisted together. At startup, jobs left in `Resolving` or `Searching` are re-queued.
+- `GET /api/downloads` supports status filtering and bounded pagination (up to 100 items per page); queued results are ordered FIFO and include queue positions. `GET /api/downloads/{id}` returns an individual job status.
+- `POST /api/downloads/{id}/approve` accepts only `NeedsReview`, records `Approved`, and preserves the selected source and score. This records the user's decision only; the worker does not yet consume approved jobs or start acquisition.
+- `POST /api/downloads/{id}/cancel` cancels jobs only while `Queued` or `NeedsReview`; attempts to cancel active or terminal jobs return `409 Conflict`. Active provider work is not interrupted.
+- `POST /api/downloads/{id}/retry` requeues `Failed` jobs, retaining the lifetime attempt count and clearing prior error/candidate details. Manual retries have no configured limit; automatic transient retry/backoff is not implemented.
+- `Downloading` recovery is not implemented.
+- `NeedsReview` jobs are parked while the worker continues processing other queued jobs.
+- The deterministic provider is currently registered by the API. It supports repeatable pipeline tests but does not acquire audio. The `YtDlpAcquisitionProvider` is not yet a production implementation or the registered default.
+- The accepted candidate is persisted with its score and source, then the job stops at `ReadyForTagging`. Actual download, transcode, tagging, library persistence, and SSE progress remain future work.
+- Target behavior (not implemented): if the target file already exists (same MBID or same sanitized `Artist/Album/Title`), skip and mark `Done` with note `AlreadyExists`.
+- The intended completed design remains a persisted, resumable queue with transient retries, idempotency, and progress over SSE.
 
 ### 8.6 Library layout
 - Album tracks: `{LibraryRoot}/{Artist}/{Album}/{NN} - {Title}.{ext}`
@@ -225,16 +239,18 @@ Endpoints/queries over the local DB: top artists by tracks owned, downloads per 
 
 ## 9. Improvements over the reference project
 
-| Reference (FreeListen) | This project |
+| Reference (FreeListen) | MusicSync direction and current status |
 |---|---|
-| Takes first `ytsearch1` result | Multi-candidate search + scoring + review state |
-| In-memory queue and activity log | Persisted queue and history in SQLite |
-| MusicBrainz called from browser | Server-side client with global 1 rps limiter, `User-Agent`, caching |
-| UI polls for activity | SSE/SignalR push |
-| Spotify embed scraping / unofficial lib | Official API (Client Credentials), fallback optional |
-| ffmpeg `-metadata` for tagging | TagLibSharp, plus MBIDs in tags |
-| Dedupe by sanitized title | Dedupe by MBID, then path, then SHA-256 |
-| **Creates composite artist C (a+b) for multi-artist tracks** | **Proper multi-artist attribution via ArtistCredit records, track appears in ALL artist indexes** |
+| Takes first `ytsearch1` result | Designed for candidate scoring and review; scorer gaps remain and the registered provider is deterministic, not a real source search. |
+| In-memory queue and activity log | SQLite-backed FIFO jobs and basic list/detail/cancel/retry endpoints are implemented; SSE and automatic retry/backoff are not. |
+| MusicBrainz called from browser | Server-side metadata clients exist; verify global rate limiting, caching, and resilience before treating them as complete. |
+| UI polls for activity | No UI or SSE yet; both remain planned. |
+| Spotify playlist support | Playlist parsing/API foundation exists; bulk playlist-to-job import is not implemented. |
+| ffmpeg tagging pipeline | ffmpeg and TagLibSharp pipeline is not implemented; MP3 is the selected intended default. |
+| Library and duplicate detection | Path resolver and entity foundations exist; completed file persistence, listing/deletion, and deduplication are not implemented. |
+| Multi-artist metadata | `TrackInfo` supports artist credits, but persisted track mapping and library indexing do not yet provide end-to-end multi-artist attribution. |
+
+These are roadmap comparisons, not claims that the target behavior is already shipped. The near-term goal is a complete, safe single-track vertical slice before bulk workflows or UI work.
 
 ## 10. HTTP API (sketch)
 
@@ -251,8 +267,10 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | GET | `/playlists?url=` | Resolve a public Spotify playlist |
 | POST | `/downloads` | Enqueue track(s), album or playlist |
 | GET | `/downloads` | List jobs (filter by status) |
+| GET | `/downloads/{id}` | Get a job and its current status |
 | POST | `/downloads/{id}/approve` | Approve a `NeedsReview` candidate |
-| POST | `/downloads/{id}/cancel` | Cancel a job |
+| POST | `/downloads/{id}/cancel` | Cancel a queued or review-pending job |
+| POST | `/downloads/{id}/retry` | Requeue a failed job |
 | GET | `/events` | SSE stream of job progress |
 | GET | `/library` | List saved files |
 | DELETE | `/library/{id}` | Delete a file and prune empty folders |
@@ -302,22 +320,37 @@ Auth__Disable=false          # only behind an authenticating reverse proxy
 
 ## 14. Milestones
 
-1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, and metadata-client DI. 🚧 In progress - authentication, health endpoint, SQLite registration, and migrations remain.
-2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients with JSON parsing, API composition, and fixture-based tests. 🚧 In progress - cover-art retrieval, cache correctness, and broader endpoint tests remain.
-3. **M3 Pipeline:** job entity, persisted queue, worker, `YtDlpAcquisitionProvider`, ffmpeg transcode, TagLibSharp tagging, **library path resolver with traversal tests**. 🚧 Scaffolded - path tests and queue structure exist, but real acquisition, tagging, persistence wiring, and resumability remain.
-4. **M4 Matching:** scorer with unit tests, review state, approve/cancel endpoints. ✅ Core scorer and tests implemented; review endpoints and best-candidate selection remain.
-5. **M5 Playlists and top-N:** Spotify public playlist and ListenBrainz parsing foundations implemented; end-to-end track mapping and import workflow remain.
-6. **M6 Realtime and library:** SSE, library listing/deletion, dedupe by hash and MBID.
-7. **M7 Analytics and packaging:** summary endpoints, Dockerfile (ffmpeg, yt-dlp, Deno), docs, CI.
-8. **M8 UI:** minimal static frontend (Search, Activity, Library, Settings).
+Progress below reflects the current repository implementation. A passing test/build validates only the exercised code paths; it does not imply the remaining milestone features are complete.
+
+1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, SQLite registration, metadata-client DI, and EF Core migrations are present. The API applies pending migrations at startup and safely baselines a matching legacy `EnsureCreated` SQLite schema. 🚧 In progress - authentication, health endpoint, and HTTPS enforcement remain.
+2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - cover-art retrieval, cache correctness, verified rate limiting/resilience, error/response consistency across all endpoints, and broader endpoint tests remain.
+3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery for `Resolving`/`Searching`, deterministic acquisition, best-candidate scoring, job list/detail APIs, queue position, queued/review cancellation, manual retry for failed jobs, and persistence through `ReadyForTagging` are implemented. 🚧 In progress - complete the single-track vertical slice: fix scorer gaps; decide how approved candidates enter the pipeline; implement an authorized real acquisition path, MP3 conversion, TagLibSharp tagging, safe final-path resolution/tests, LibraryFile persistence, deduplication, automatic retries, active-work cancellation, and SSE.
+4. **M4 Matching:** core scorer, unit tests, best-candidate selection, `NeedsReview`, and approval recording are implemented. 🚧 In progress - artist matching/target-aware penalties, candidate comparison and selection, and consumption of approved candidates by the acquisition pipeline remain.
+5. **M5 Playlists and top-N:** Spotify playlist and ListenBrainz top-recording parsing foundations and API endpoints are present. 🚧 In progress - end-to-end playlist track mapping and enqueue/import workflow remain.
+6. **M6 Realtime and library:** ⏳ Planned - SSE, library listing/deletion, and deduplication by MBID/path/hash.
+7. **M7 Analytics and packaging:** ⏳ Planned - summary endpoints, Docker image (ffmpeg, yt-dlp, Deno), docs, and CI.
+8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
+
+### Recommended implementation order
+
+1. Complete one single-track pipeline end to end using only an acquisition source the user is authorized to access: scorer correctness, approved-candidate behavior, acquisition, MP3 conversion, tagging, safe library path, duplicate detection, and persisted `LibraryFile`.
+2. Verify job lifecycle and failure recovery for that vertical slice with integration tests; do not mark a job `Done` until the file and database record are successfully committed.
+3. Add bulk enqueue/import workflows, starting with public Spotify playlists, then album and artist top-N flows.
+4. Add SSE/activity and library list/delete endpoints, followed by the minimal UI that exposes Search, Activity, Library, and Settings.
+5. Prioritize security, configuration, and deployment packaging needed for the chosen target; defer analytics and other secondary features until the core workflow is dependable.
 
 ## 15. Open questions (ask the owner before assuming)
 
-- Single-user only, or eventually multi-user?
-- Which output format should be the default?
-- Should `NeedsReview` block the queue or just park the item?
-- Should extra acquisition providers (local import, Bandcamp, Internet Archive) be in scope for v1?
-- Target deployment: bare metal, Docker on a NAS, or both?
+- **Deployment target:** bare metal, Docker on a NAS, or both?
+
+Owner decisions already recorded:
+
+- Single-user service.
+- MP3 is the intended default output format.
+- Use yt-dlp as the intended acquisition provider, subject to lawful use and service terms.
+- `NeedsReview` jobs park without blocking later queued jobs.
+- Queue ordering is FIFO; first queue-management scope is observing/managing jobs, not batch enqueue.
+- Use EF Core migrations for future schema changes; do not use `EnsureCreated` for application startup or database upgrades.
 
 ## 16. Instructions to the AI assistant
 

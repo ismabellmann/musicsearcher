@@ -10,7 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../MusicSync.Api/MusicSync.Api.csproj" />
     <ProjectReference Include="../../MusicSync/Infrastructure/MusicSync.Infrastructure.csproj" />
+    <ProjectReference Include="../../MusicSync/Worker/MusicSync.Worker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

@@ -102,6 +102,7 @@ tests/
 Settings can be supplied through `appsettings.json` or environment variables:
 
 ```text
+Data__DatabasePath=/var/lib/musicsync/musicsync.db
 Library__Root=/music
 Audio__Format=mp3                 # mp3|flac|opus|m4a
 Audio__Quality=0
@@ -115,6 +116,65 @@ Spotify__ClientId=                # optional
 Spotify__ClientSecret=            # optional
 Auth__Disable=false               # use only behind a trusted proxy
 ```
+
+The SQLite database defaults to `data/musicsync.db` under the API content root.
+Set `Data__DatabasePath` to choose another persistent file location; the API
+creates its parent directory when needed.
+
+The API applies pending EF Core migrations on startup. New schema changes should
+be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use
+`EnsureCreated` for application startup or upgrades. Install the matching EF
+tool and create a migration from the repository root:
+
+```bash
+dotnet tool install --global dotnet-ef --version 8.0.0
+dotnet ef migrations add MigrationName \
+  --project MusicSync/Infrastructure/MusicSync.Infrastructure.csproj \
+  --context MusicSyncDbContext \
+  --output-dir Migrations
+```
+
+For databases created by the previous `EnsureCreated` setup, startup baselines
+the database only if its tables and columns match the known schema exactly;
+data is retained. An unknown or partially changed schema causes startup to fail
+with an actionable error instead of attempting a destructive recreation.
+
+## API responses
+
+Successful and validation-error responses include an HTTP status, a Spanish
+`msg`, and a `data` field:
+
+```json
+{
+  "status": 202,
+  "msg": "Canción añadida a la cola exitosamente.",
+  "data": {
+    "jobId": 1,
+    "jobStatus": "Queued"
+  }
+}
+```
+
+Submit a track for acquisition with `POST /api/downloads`, sending its
+MusicBrainz recording ID, title, artist, and duration in milliseconds. The
+hosted worker reads queued jobs from SQLite, selects and scores a candidate,
+then persists its source and score with status `ReadyForTagging`. Actual audio
+download and TagLibSharp tagging are intentionally outside this pipeline slice.
+
+Queue management endpoints:
+
+| Method | Path | Behavior |
+|---|---|---|
+| `GET` | `/api/downloads?status=Queued&page=1&pageSize=50` | List jobs; status is optional, page size is limited to 100. Queued results are FIFO and include queue positions. |
+| `GET` | `/api/downloads/{id}` | Get a job and its current status. |
+| `POST` | `/api/downloads/{id}/approve` | Approve a `NeedsReview` candidate; records status `Approved` but does not start a download. |
+| `POST` | `/api/downloads/{id}/cancel` | Cancel a queued or review-pending job. Active or terminal jobs return `409 Conflict`; active provider work is not interrupted. |
+| `POST` | `/api/downloads/{id}/retry` | Requeue a failed job, preserving its attempt count and clearing its prior error and candidate. |
+
+These endpoints use the same `{ "status", "msg", "data" }` response envelope.
+Manual retries currently have no configured limit; automatic transient retry
+and backoff are not implemented. Approval preserves the candidate source and
+score; audio acquisition remains a later pipeline step.
 
 ## Development
 

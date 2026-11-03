@@ -45,7 +45,7 @@ The planned workflow is:
 | Language | C# with nullable reference types |
 | Web API | ASP.NET Core |
 | Persistence | Entity Framework Core + SQLite |
-| Background work | `BackgroundService` + `System.Threading.Channels` |
+| Background work | `BackgroundService` polling persisted SQLite jobs |
 | Audio acquisition | `yt-dlp` through an acquisition provider |
 | Transcoding | `ffmpeg` |
 | Tagging | TagLibSharp |
@@ -87,9 +87,9 @@ tests/
 | Area | Status |
 |---|---|
 | Core project and domain foundations | ✅ Implemented |
-| SQLite persistence and entity model | 🚧 In progress |
-| Background worker and acquisition flow | 🚧 Scaffolded |
-| Candidate matching and scoring | ✅ Implemented |
+| SQLite persistence and entity model (EF Core migrations, artist credits) | 🚧 In progress |
+| Background worker and acquisition flow | 🚧 In progress (single-track pipeline with automatic retries; candidate review; recovery on restart) |
+| Candidate matching and scoring | 🚧 In progress (scorer implemented; candidate selection pending) |
 | MusicBrainz, ListenBrainz, and Spotify parsing | ✅ Implemented with tests |
 | Search and playlist API integration | 🚧 In progress |
 | Playlist imports and track mapping | ⏳ Planned |
@@ -103,23 +103,34 @@ Settings can be supplied through `appsettings.json` or environment variables:
 
 ```text
 Data__DatabasePath=/var/lib/musicsync/musicsync.db
-Library__Root=/music
+Library__Root=/music                # default: tracks/ at the repository root
+Acquisition__LocalSourceDirectory=tracks
+Tools__Ffmpeg=ffmpeg
+Tools__Ffprobe=ffprobe
+Tools__YtDlp=yt-dlp
 Audio__Format=mp3                 # mp3|flac|opus|m4a
 Audio__Quality=0
 Matching__AutoAcceptThreshold=0.80
 Matching__ReviewThreshold=0.50
 Matching__DurationToleranceSeconds=5
 Worker__Concurrency=1
-MusicBrainz__UserAgent=MusicSync/0.1 (you@example.com)
+MusicBrainz__UserAgent=MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)  # default; no MusicBrainz account or key needed
 ListenBrainz__Token=              # optional
 Spotify__ClientId=                # optional
 Spotify__ClientSecret=            # optional
-Auth__Disable=false               # use only behind a trusted proxy
 ```
 
 The SQLite database defaults to `data/musicsync.db` under the API content root.
 Set `Data__DatabasePath` to choose another persistent file location; the API
 creates its parent directory when needed.
+
+The library defaults to `tracks/` at the repository root, the same folder the
+local-file provider reads. `tracks/` and `data/` are git-ignored.
+
+MusicBrainz needs no account or API key, only the identifying User-Agent above.
+The app refuses to start if `MusicBrainz__UserAgent` is not in the form
+`Name/Version (contact)`, if a threshold is outside 0–1, if `Audio__Format`
+is not `mp3`, or if `Worker__Concurrency` is not `1`.
 
 The API applies pending EF Core migrations on startup. New schema changes should
 be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use

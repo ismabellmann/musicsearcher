@@ -22,7 +22,11 @@ public class ListenBrainzClient : IPopularityProvider
     private readonly TimeSpan _rateInterval = TimeSpan.FromMilliseconds(200); // ~5 rps max
     private DateTime _lastRequestTime = DateTime.MinValue;
 
-    public ListenBrainzClient(HttpClient httpClient, ILogger<ListenBrainzClient> logger, IConfiguration? configuration = null)
+    public ListenBrainzClient(
+        HttpClient httpClient,
+        ILogger<ListenBrainzClient> logger,
+        IConfiguration? configuration = null,
+        MusicBrainzOptions? identity = null)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -30,11 +34,9 @@ public class ListenBrainzClient : IPopularityProvider
 
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
 
-        // MusicBrainz-compatible User-Agent
-        if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
-        {
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MusicSync/1.0 ( music-sync@example.com )");
-        }
+        // Same identifying User-Agent as the MusicBrainz client
+        _httpClient.DefaultRequestHeaders.UserAgent.Clear();
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd((identity ?? new MusicBrainzOptions()).UserAgent);
     }
 
     /// <summary>

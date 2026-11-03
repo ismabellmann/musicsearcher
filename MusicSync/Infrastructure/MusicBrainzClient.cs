@@ -16,23 +16,27 @@ public class MusicBrainzClient : IMetadataProvider
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<MusicBrainzClient> _logger;
-    private readonly SemaphoreSlim _rateLimiter = new(1, 1); // 1 concurrent, will use async delay
-    private readonly TimeSpan _rateInterval = TimeSpan.FromSeconds(1);
-    private DateTime _lastRequestTime = DateTime.MinValue;
+    private readonly MusicBrainzRequestGate _gate;
 
     // In-memory cache for metadata (rarely changes, TTL of days)
     private readonly Dictionary<(string requestKey, DateTime timestamp), string> _cache
         = new();
     private const double CacheTtlDays = 7.0;
 
-    public MusicBrainzClient(HttpClient httpClient, ILogger<MusicBrainzClient> logger)
+    public MusicBrainzClient(
+        HttpClient httpClient,
+        ILogger<MusicBrainzClient> logger,
+        MusicBrainzOptions? options = null,
+        MusicBrainzRequestGate? gate = null)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _gate = gate ?? new MusicBrainzRequestGate();
 
         // Configure HttpClient for MusicBrainz
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("MusicSync/1.0 ( music-sync@example.com )");
+        _httpClient.DefaultRequestHeaders.UserAgent.Clear();
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd((options ?? new MusicBrainzOptions()).UserAgent);
     }
 
     /// <summary>
@@ -41,9 +45,6 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchTracksAsync(string query, CancellationToken ct)
     {
-        // Enforce rate limit: 1 request/second
-        await RateLimitAsync();
-
         var cacheKey = ("search-tracks:" + query, DateTime.UtcNow);
         if (_cache.TryGetValue(cacheKey, out var cachedResult) && IsCacheValid(cachedResult))
         {
@@ -54,30 +55,13 @@ public class MusicBrainzClient : IMetadataProvider
 
         _logger.LogInformation("Searching MusicBrainz tracks: {Query}", query);
 
-        try
-        {
-            var requestUri = BuildSearchUri("track", query);
-            var response = await _httpClient.GetAsync(requestUri, ct);
+        var content = await GetContentAsync(BuildSearchUri("recording", query), "track search", notFoundIsNull: false, ct) ?? string.Empty;
+        var results = ParseTrackSearchResponse(content);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                HandleMusicBrainzError(response.StatusCode, query);
-                return System.Array.Empty<TrackInfo>();
-            }
+        // Cache the result
+        _cache[cacheKey] = content;
 
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var results = ParseTrackSearchResponse(content);
-
-            // Cache the result
-            _cache[cacheKey] = content;
-
-            return results;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "MusicBrainz track search failed: {Query}", query);
-            return System.Array.Empty<TrackInfo>();
-        }
+        return results;
     }
 
     /// <summary>
@@ -85,34 +69,15 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchAlbumsAsync(string query, CancellationToken ct)
     {
-        await RateLimitAsync();
-
         _logger.LogInformation("Searching MusicBrainz albums: {Query}", query);
 
-        try
-        {
-            var requestUri = BuildSearchUri("album", query);
-            var response = await _httpClient.GetAsync(requestUri, ct);
+        var content = await GetContentAsync(BuildSearchUri("release", query), "album search", notFoundIsNull: false, ct) ?? string.Empty;
+        var results = ParseAlbumSearchResponse(content);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                HandleMusicBrainzError(response.StatusCode, query);
-                return System.Array.Empty<TrackInfo>();
-            }
+        // Cache the result
+        _cache[("search-albums:" + query, DateTime.UtcNow)] = content;
 
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var results = ParseAlbumSearchResponse(content);
-
-            // Cache the result
-            _cache[("search-albums:" + query, DateTime.UtcNow)] = content;
-
-            return results;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "MusicBrainz album search failed: {Query}", query);
-            return System.Array.Empty<TrackInfo>();
-        }
+        return results;
     }
 
     /// <summary>
@@ -120,34 +85,15 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchArtistsAsync(string query, CancellationToken ct)
     {
-        await RateLimitAsync();
-
         _logger.LogInformation("Searching MusicBrainz artists: {Query}", query);
 
-        try
-        {
-            var requestUri = BuildSearchUri("artist", query);
-            var response = await _httpClient.GetAsync(requestUri, ct);
+        var content = await GetContentAsync(BuildSearchUri("artist", query), "artist search", notFoundIsNull: false, ct) ?? string.Empty;
+        var results = ParseArtistSearchResponse(content);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                HandleMusicBrainzError(response.StatusCode, query);
-                return System.Array.Empty<TrackInfo>();
-            }
+        // Cache the result
+        _cache[("search-artists:" + query, DateTime.UtcNow)] = content;
 
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var results = ParseArtistSearchResponse(content);
-
-            // Cache the result
-            _cache[("search-artists:" + query, DateTime.UtcNow)] = content;
-
-            return results;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "MusicBrainz artist search failed: {Query}", query);
-            return System.Array.Empty<TrackInfo>();
-        }
+        return results;
     }
 
     /// <summary>
@@ -155,8 +101,6 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<AlbumDetail?> GetAlbumAsync(Guid releaseGroupMbid, CancellationToken ct)
     {
-        await RateLimitAsync();
-
         var cacheKey = ("album-detail:" + releaseGroupMbid, DateTime.UtcNow);
         if (_cache.TryGetValue(cacheKey, out var cachedAlbum) && IsCacheValid(cachedAlbum))
         {
@@ -166,30 +110,16 @@ public class MusicBrainzClient : IMetadataProvider
 
         _logger.LogInformation("Fetching MusicBrainz album detail: {Mbid}", releaseGroupMbid);
 
-        try
-        {
-            var requestUri = BuildAlbumUri(releaseGroupMbid);
-            var response = await _httpClient.GetAsync(requestUri, ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                HandleMusicBrainzError(response.StatusCode, releaseGroupMbid.ToString());
-                return null;
-            }
-
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var album = ParseAlbumDetailResponse(content);
-
-            // Cache the result for 7 days
-            _cache[cacheKey] = content;
-
-            return album;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "MusicBrainz album fetch failed: {Mbid}", releaseGroupMbid);
+        var content = await GetContentAsync(BuildAlbumUri(releaseGroupMbid), "album detail", notFoundIsNull: true, ct);
+        if (content is null)
             return null;
-        }
+
+        var album = ParseAlbumDetailResponse(content);
+
+        // Cache the result for 7 days
+        _cache[cacheKey] = content;
+
+        return album;
     }
 
     /// <summary>
@@ -197,65 +127,90 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<TrackInfo?> LookupByIsrcAsync(string isrc, CancellationToken ct)
     {
-        await RateLimitAsync();
-
         _logger.LogInformation("Looking up MusicBrainz track by ISRC: {Isrc}", isrc);
 
-        try
-        {
-            var requestUri = BuildIsrcUri(isrc);
-            var response = await _httpClient.GetAsync(requestUri, ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                // ISRC not found is not an error - return null
-                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    return null;
-                }
-                HandleMusicBrainzError(response.StatusCode, isrc);
-                return null;
-            }
-
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var track = ParseIsrcLookupResponse(content);
-
-            // Cache the result
-            _cache[("isrc:" + isrc, DateTime.UtcNow)] = content;
-
-            return track;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "MusicBrainz ISRC lookup failed: {Isrc}", isrc);
+        // ISRC not found is not an error: GetContentAsync returns null for 404.
+        var content = await GetContentAsync(BuildIsrcUri(isrc), "ISRC lookup", notFoundIsNull: true, ct);
+        if (content is null)
             return null;
-        }
+
+        var track = ParseIsrcLookupResponse(content);
+
+        // Cache the result
+        _cache[("isrc:" + isrc, DateTime.UtcNow)] = content;
+
+        return track;
     }
 
     // Helper methods
 
-    private async Task RateLimitAsync()
+    private const int MaxAttempts = 3;
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Sends a paced GET request. Retries 429 and 503 responses (honouring Retry-After) and transport
+    /// failures with exponential backoff. Throws <see cref="MetadataUnavailableException"/> when the
+    /// provider still cannot answer. Returns null for 404 when <paramref name="notFoundIsNull"/> is set.
+    /// </summary>
+    private async Task<string?> GetContentAsync(System.Uri uri, string operation, bool notFoundIsNull, CancellationToken ct)
     {
-        // Semaphore-based rate limiter: only 1 request at a time with 1 second interval
-        await _rateLimiter.WaitAsync();
-
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            // Additional interval-based throttling
-            var timeSinceLast = DateTime.UtcNow - _lastRequestTime;
-            if (timeSinceLast < _rateInterval)
+            await _gate.WaitForTurnAsync(ct);
+
+            try
             {
-                var waitTime = _rateInterval - timeSinceLast;
-                await Task.Delay(waitTime, CancellationToken.None);
-            }
+                using var response = await _httpClient.GetAsync(uri, ct);
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadAsStringAsync(ct);
 
-            _lastRequestTime = DateTime.UtcNow;
-        }
-        finally
-        {
-            _rateLimiter.Release();
+                if (notFoundIsNull && response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    return null;
+
+                if (!IsRetryable(response.StatusCode) || attempt == MaxAttempts)
+                    throw new MetadataUnavailableException(operation, (int)response.StatusCode);
+
+                var delay = RetryAfterDelay(response) ?? BackoffDelay(attempt);
+                _gate.Penalize(delay);
+                _logger.LogWarning(
+                    "MusicBrainz returned {StatusCode} for {Operation}; attempt {Attempt} of {MaxAttempts} in {Delay}",
+                    (int)response.StatusCode, operation, attempt + 1, MaxAttempts, delay);
+            }
+            catch (HttpRequestException ex) when (attempt < MaxAttempts)
+            {
+                var delay = BackoffDelay(attempt);
+                _logger.LogWarning(ex, "MusicBrainz request failed for {Operation}; attempt {Attempt} of {MaxAttempts} in {Delay}",
+                    operation, attempt + 1, MaxAttempts, delay);
+                await Task.Delay(delay, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new MetadataUnavailableException(operation, null, ex);
+            }
         }
     }
+
+    private static bool IsRetryable(System.Net.HttpStatusCode statusCode) =>
+        statusCode == System.Net.HttpStatusCode.ServiceUnavailable
+        || statusCode == System.Net.HttpStatusCode.TooManyRequests;
+
+    private static TimeSpan? RetryAfterDelay(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter is null)
+            return null;
+
+        TimeSpan? delay = retryAfter.Delta;
+        if (delay is null && retryAfter.Date is { } date)
+            delay = date - DateTimeOffset.UtcNow;
+
+        if (delay is null)
+            return null;
+
+        return delay.Value < TimeSpan.Zero ? TimeSpan.Zero : (delay.Value > MaxRetryDelay ? MaxRetryDelay : delay.Value);
+    }
+
+    private static TimeSpan BackoffDelay(int attempt) => TimeSpan.FromSeconds(Math.Pow(2, attempt));
 
     private bool IsCacheValid(string cachedContent)
     {
@@ -282,18 +237,6 @@ public class MusicBrainzClient : IMetadataProvider
     {
         var encodedIsrc = System.Web.HttpUtility.UrlEncode(isrc);
         return new System.Uri($"https://musicbrainz.org/ws/2/track?isrc={encodedIsrc}&fmt=json", System.UriKind.Absolute);
-    }
-
-    private void HandleMusicBrainzError(System.Net.HttpStatusCode statusCode, string query)
-    {
-        _logger.LogWarning("MusicBrainz API error {StatusCode} for query: {Query}", statusCode, query);
-
-        // Handle 503 with Retry-After
-        if (statusCode == System.Net.HttpStatusCode.ServiceUnavailable)
-        {
-            _logger.LogError("MusicBrainz returned 503 - implementing backoff per section 8.2");
-            // Would read Retry-After header in production
-        }
     }
 
     private IReadOnlyList<TrackInfo> ParseTrackSearchResponse(string json)

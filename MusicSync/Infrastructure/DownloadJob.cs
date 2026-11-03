@@ -40,4 +40,12 @@ public class DownloadJob
 
     [MaxLength(500)]
     public string? OutputPath { get; set; }
+
+    public ICollection<DownloadJobCandidate> Candidates { get; set; } = new List<DownloadJobCandidate>();
+
+    /// <summary>Earliest time the job may be claimed again after a transient failure; null means immediately.</summary>
+    public DateTime? NextAttemptAt { get; set; }
+
+    /// <summary>Automatic retries used for transient failures since the last manual retry.</summary>
+    public int AutomaticRetries { get; set; } = 0;
 }

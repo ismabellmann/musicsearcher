@@ -15,6 +15,7 @@ public class MusicSyncDbContext : DbContext
     public DbSet<Album> Albums { get; set; } = null!;
     public DbSet<Artist> Artists { get; set; } = null!;
     public DbSet<TrackArtist> TrackArtists { get; set; } = null!;
+    public DbSet<DownloadJobCandidate> DownloadJobCandidates { get; set; } = null!;
     public DbSet<LibraryFile> LibraryFiles { get; set; } = null!;
     public DbSet<Setting> Settings { get; set; } = null!;
     public DbSet<UserAccount> UserAccounts { get; set; } = null!;
@@ -35,6 +36,15 @@ public class MusicSyncDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(item => item.ArtistId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DownloadJobCandidate>(entity =>
+        {
+            entity.HasIndex(item => new { item.DownloadJobId, item.Rank }).IsUnique();
+            entity.HasOne(item => item.DownloadJob)
+                .WithMany(job => job.Candidates)
+                .HasForeignKey(item => item.DownloadJobId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Artist>(entity =>

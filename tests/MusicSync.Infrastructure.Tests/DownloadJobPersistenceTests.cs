@@ -65,7 +65,7 @@ public sealed class DownloadJobPersistenceTests
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
         Assert.True(await db.Database.CanConnectAsync());
-        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Tracks.ToListAsync());
     }
 
@@ -93,7 +93,7 @@ public sealed class DownloadJobPersistenceTests
 
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
-        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var persistedTrack = await db.Tracks.SingleAsync();
         Assert.Equal(track.RecordingMbid, persistedTrack.RecordingMbid);
         Assert.Equal("Legacy Track", persistedTrack.Title);
@@ -298,7 +298,7 @@ public sealed class DownloadJobPersistenceTests
         await db.SaveChangesAsync();
 
         var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
-        var result = await controller.Approve(reviewJob.Id, CancellationToken.None);
+        var result = await controller.Approve(reviewJob.Id, null, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result.Result);
         var body = Assert.IsType<ApiResponse<DownloadJobSummary>>(response.Value);
@@ -331,7 +331,7 @@ public sealed class DownloadJobPersistenceTests
         var queuedJob = await CreateJobAsync(db, track.Id, DownloadJobStatus.Queued);
 
         var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
-        var result = await controller.Approve(queuedJob.Id, CancellationToken.None);
+        var result = await controller.Approve(queuedJob.Id, null, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(result.Result);
         var body = Assert.IsType<ApiResponse<DownloadJobSummary>>(response.Value);
@@ -353,7 +353,7 @@ public sealed class DownloadJobPersistenceTests
         await db.Database.EnsureCreatedAsync();
         var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
 
-        var result = await controller.Approve(404, CancellationToken.None);
+        var result = await controller.Approve(404, null, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(result.Result);
         Assert.Equal(404, Assert.IsType<ApiResponse<DownloadJobSummary>>(response.Value).Status);

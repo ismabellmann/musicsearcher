@@ -27,3 +27,32 @@ public sealed class AcquisitionOptions
 {
     public string LocalSourceDirectory { get; set; } = string.Empty;
 }
+
+public sealed class MusicBrainzOptions
+{
+    /// <summary>
+    /// Identifying User-Agent required by MusicBrainz (section 8.2). Format: "Name/Version (contact)".
+    /// Also used for ListenBrainz requests. MusicBrainz needs no account or API key.
+    /// </summary>
+    public string UserAgent { get; set; } = "MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)";
+}
+
+public sealed class MatchingOptions
+{
+    public double AutoAcceptThreshold { get; set; } = 0.80;
+
+    public double ReviewThreshold { get; set; } = 0.50;
+
+    public int DurationToleranceSeconds { get; set; } = 5;
+}
+
+public sealed class WorkerOptions
+{
+    public int Concurrency { get; set; } = 1;
+
+    /// <summary>Automatic retries for transient failures before a job is marked Failed.</summary>
+    public int MaxAutomaticRetries { get; set; } = 2;
+
+    /// <summary>Base backoff in seconds; retry n waits base x 2^(n-1), capped at 10 minutes.</summary>
+    public int RetryBaseDelaySeconds { get; set; } = 30;
+}

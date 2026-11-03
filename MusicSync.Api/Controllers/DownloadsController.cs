@@ -122,7 +122,9 @@ public sealed class DownloadsController : ControllerBase
                         earlier.Status == DownloadJobStatus.Queued
                         && (earlier.CreatedAt < job.CreatedAt
                             || (earlier.CreatedAt == job.CreatedAt && earlier.Id <= job.Id)))
-                    : null))
+                    : null,
+                job.NextAttemptAt,
+                null))
             .ToListAsync(ct);
 
         var result = new PagedResult<DownloadJobSummary>(jobs, page, pageSize, totalCount);
@@ -137,7 +139,7 @@ public sealed class DownloadsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<DownloadJobSummary>), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ApiResponse<DownloadJobSummary>>> Get(int id, CancellationToken ct)
     {
-        var job = await FindJobSummaryAsync(id, ct);
+        var job = await FindJobSummaryAsync(id, ct, includeCandidates: true);
         if (job is null)
         {
             return NotFound(ApiResponse<DownloadJobSummary>.Failure(
@@ -155,16 +157,47 @@ public sealed class DownloadsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<DownloadJobSummary>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<DownloadJobSummary>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<DownloadJobSummary>), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ApiResponse<DownloadJobSummary>>> Approve(int id, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<DownloadJobSummary>>> Approve(
+        int id,
+        [FromBody] ApproveDownloadRequest? request,
+        CancellationToken ct)
     {
-        var approved = await _db.DownloadJobs
-            .Where(job => job.Id == id && job.Status == DownloadJobStatus.NeedsReview)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(job => job.Status, DownloadJobStatus.Approved)
-                    .SetProperty(job => job.Error, (string?)null)
-                    .SetProperty(job => job.FinishedAt, (DateTime?)null),
-                ct);
+        int approved;
+        if (request?.CandidateId is int candidateId)
+        {
+            var candidate = await _db.DownloadJobCandidates
+                .AsNoTracking()
+                .SingleOrDefaultAsync(item => item.Id == candidateId && item.DownloadJobId == id, ct);
+
+            if (candidate is null)
+            {
+                return BadRequest(ApiResponse<DownloadJobSummary>.Failure(
+                    StatusCodes.Status400BadRequest,
+                    "El candidato indicado no pertenece a este trabajo."));
+            }
+
+            approved = await _db.DownloadJobs
+                .Where(job => job.Id == id && job.Status == DownloadJobStatus.NeedsReview)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(job => job.Status, DownloadJobStatus.Approved)
+                        .SetProperty(job => job.Error, (string?)null)
+                        .SetProperty(job => job.FinishedAt, (DateTime?)null)
+                        .SetProperty(job => job.SourceUrl, candidate.SourceUrl)
+                        .SetProperty(job => job.MatchScore, (float?)candidate.Score),
+                    ct);
+        }
+        else
+        {
+            approved = await _db.DownloadJobs
+                .Where(job => job.Id == id && job.Status == DownloadJobStatus.NeedsReview)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(job => job.Status, DownloadJobStatus.Approved)
+                        .SetProperty(job => job.Error, (string?)null)
+                        .SetProperty(job => job.FinishedAt, (DateTime?)null),
+                    ct);
+        }
 
         if (approved == 0)
         {
@@ -222,7 +255,9 @@ public sealed class DownloadsController : ControllerBase
                     .SetProperty(job => job.Error, (string?)null)
                     .SetProperty(job => job.FinishedAt, (DateTime?)null)
                     .SetProperty(job => job.SourceUrl, (string?)null)
-                    .SetProperty(job => job.MatchScore, (float?)null),
+                    .SetProperty(job => job.MatchScore, (float?)null)
+                    .SetProperty(job => job.AutomaticRetries, 0)
+                    .SetProperty(job => job.NextAttemptAt, (DateTime?)null),
                 ct);
 
         if (retried == 0)
@@ -258,9 +293,9 @@ public sealed class DownloadsController : ControllerBase
             $"{conflictMessage} Estado actual: {status}."));
     }
 
-    private async Task<DownloadJobSummary?> FindJobSummaryAsync(int id, CancellationToken ct)
+    private async Task<DownloadJobSummary?> FindJobSummaryAsync(int id, CancellationToken ct, bool includeCandidates = false)
     {
-        return await _db.DownloadJobs
+        var summary = await _db.DownloadJobs
             .AsNoTracking()
             .Where(job => job.Id == id)
             .Select(job => new DownloadJobSummary(
@@ -286,8 +321,29 @@ public sealed class DownloadsController : ControllerBase
                         earlier.Status == DownloadJobStatus.Queued
                         && (earlier.CreatedAt < job.CreatedAt
                             || (earlier.CreatedAt == job.CreatedAt && earlier.Id <= job.Id)))
-                    : null))
+                    : null,
+                job.NextAttemptAt,
+                null))
             .SingleOrDefaultAsync(ct);
+
+        if (summary is null || !includeCandidates)
+            return summary;
+
+        var candidates = await _db.DownloadJobCandidates
+            .AsNoTracking()
+            .Where(item => item.DownloadJobId == id)
+            .OrderBy(item => item.Rank)
+            .Select(item => new DownloadJobCandidateDto(
+                item.Id,
+                item.Rank,
+                item.SourceUrl,
+                item.Title,
+                item.DurationMs,
+                item.Score,
+                item.Reason))
+            .ToListAsync(ct);
+
+        return summary with { Candidates = candidates };
     }
 
     private static string? NormalizeStatus(string? status)
@@ -318,6 +374,19 @@ public sealed record DownloadJobSummary(
     string? ProviderName,
     string? SourceUrl,
     float? MatchScore,
-    int? QueuePosition);
+    int? QueuePosition,
+    DateTime? NextAttemptAt,
+    IReadOnlyList<DownloadJobCandidateDto>? Candidates = null);
+
+public sealed record DownloadJobCandidateDto(
+    int CandidateId,
+    int Rank,
+    string SourceUrl,
+    string Title,
+    int? DurationMs,
+    float Score,
+    string? Reason);
+
+public sealed record ApproveDownloadRequest(int? CandidateId = null);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount);

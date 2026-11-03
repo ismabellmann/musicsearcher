@@ -43,7 +43,22 @@ builder.Services.AddSingleton(audioOptions);
 builder.Services.AddSingleton(toolOptions);
 builder.Services.AddSingleton(new FfmpegAudioTranscoder(toolOptions, audioOptions));
 builder.Services.AddSingleton<LibraryPathResolver>();
-builder.Services.AddSingleton<IMatchScorer, TrackScorer>();
+var musicBrainzOptions = builder.Configuration.GetSection("MusicBrainz").Get<MusicBrainzOptions>() ?? new MusicBrainzOptions();
+var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingOptions>() ?? new MatchingOptions();
+var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
+
+var configurationErrors = MusicSyncOptionsValidator.Validate(musicBrainzOptions, matchingOptions, audioOptions, workerOptions);
+if (configurationErrors.Count > 0)
+    throw new InvalidOperationException("Invalid configuration: " + string.Join(" ", configurationErrors));
+
+builder.Services.AddSingleton(musicBrainzOptions);
+builder.Services.AddSingleton(new MusicBrainzRequestGate());
+builder.Services.AddSingleton(matchingOptions);
+builder.Services.AddSingleton(workerOptions);
+builder.Services.AddSingleton<IMatchScorer>(_ => new TrackScorer(
+    matchingOptions.AutoAcceptThreshold,
+    matchingOptions.ReviewThreshold,
+    matchingOptions.DurationToleranceSeconds));
 builder.Services.AddSingleton<IAcquisitionProvider, DeterministicAcquisitionProvider>();
 builder.Services.AddSingleton<IAcquisitionProvider>(serviceProvider => new LocalFileAcquisitionProvider(
     acquisitionOptions.LocalSourceDirectory,
@@ -89,6 +104,24 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next(context);
+    }
+    catch (MetadataUnavailableException ex)
+    {
+        context.RequestServices.GetRequiredService<ILogger<Program>>()
+            .LogWarning(ex, "Metadata provider unavailable for {Path}", context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(ApiResponse<object?>.Failure(
+            StatusCodes.Status503ServiceUnavailable,
+            "MusicBrainz no está disponible en este momento. Inténtelo de nuevo más tarde."));
+    }
+});
 
 app.UseRouting();
 

@@ -25,6 +25,7 @@ public sealed class Worker : BackgroundService
     private readonly LibraryPathResolver _pathResolver;
     private readonly FfmpegAudioTranscoder _transcoder;
     private readonly LibraryOptions _library;
+    private readonly RetryPolicy _retryPolicy;
 
     public Worker(
         IServiceScopeFactory scopeFactory,
@@ -33,8 +34,12 @@ public sealed class Worker : BackgroundService
         IMatchScorer matchScorer,
         LibraryPathResolver pathResolver,
         FfmpegAudioTranscoder transcoder,
-        LibraryOptions library)
+        LibraryOptions library,
+        WorkerOptions? workerOptions = null)
     {
+        var options = workerOptions ?? new WorkerOptions();
+        _retryPolicy = new RetryPolicy(options.MaxAutomaticRetries, TimeSpan.FromSeconds(options.RetryBaseDelaySeconds));
+
         _scopeFactory = scopeFactory;
         _logger = logger;
         _providers = providers.ToDictionary(provider => provider.Name, StringComparer.Ordinal);
@@ -97,7 +102,8 @@ public sealed class Worker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MusicSyncDbContext>();
         var jobId = await db.DownloadJobs
-            .Where(item => item.Status == DownloadJobStatus.Queued)
+            .Where(item => item.Status == DownloadJobStatus.Queued
+                && (item.NextAttemptAt == null || item.NextAttemptAt <= DateTime.UtcNow))
             .OrderBy(item => item.CreatedAt)
             .ThenBy(item => item.Id)
             .Select(item => (int?)item.Id)
@@ -108,13 +114,16 @@ public sealed class Worker : BackgroundService
 
         var startedAt = DateTime.UtcNow;
         var claimed = await db.DownloadJobs
-            .Where(item => item.Id == jobId.Value && item.Status == DownloadJobStatus.Queued)
+            .Where(item => item.Id == jobId.Value
+                && item.Status == DownloadJobStatus.Queued
+                && (item.NextAttemptAt == null || item.NextAttemptAt <= DateTime.UtcNow))
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(item => item.Status, DownloadJobStatus.Resolving)
                     .SetProperty(item => item.StartedAt, item => item.StartedAt ?? startedAt)
                     .SetProperty(item => item.Attempts, item => item.Attempts + 1)
-                    .SetProperty(item => item.Error, (string?)null),
+                    .SetProperty(item => item.Error, (string?)null)
+                    .SetProperty(item => item.NextAttemptAt, (DateTime?)null),
                 ct);
 
         if (claimed == 0)
@@ -147,15 +156,36 @@ public sealed class Worker : BackgroundService
                 return true;
             }
 
-            var best = candidates
+            var ranked = candidates
                 .Select(candidate => new
                 {
                     Candidate = candidate,
                     Result = _matchScorer.Score(trackInfo, candidate)
                 })
                 .OrderByDescending(item => item.Result.Score)
-                .First();
+                .Take(MaxCandidates)
+                .ToList();
 
+            await db.DownloadJobCandidates
+                .Where(item => item.DownloadJobId == job.Id)
+                .ExecuteDeleteAsync(ct);
+
+            for (var index = 0; index < ranked.Count; index++)
+            {
+                var item = ranked[index];
+                db.DownloadJobCandidates.Add(new DownloadJobCandidate
+                {
+                    DownloadJobId = job.Id,
+                    Rank = index + 1,
+                    SourceUrl = Limit(item.Candidate.SourceUrl, 500),
+                    Title = Limit(item.Candidate.Title, 500),
+                    DurationMs = item.Candidate.DurationMs,
+                    Score = (float)item.Result.Score,
+                    Reason = Limit(item.Result.Reason, 500)
+                });
+            }
+
+            var best = ranked[0];
             job.SourceUrl = best.Candidate.SourceUrl;
             job.MatchScore = (float)best.Result.Score;
 
@@ -194,8 +224,7 @@ public sealed class Worker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job {JobId} failed during candidate acquisition.", job.Id);
-            Fail(job, ex.Message);
-            await db.SaveChangesAsync(ct);
+            await HandleFailureAsync(db, job, ex, DownloadJobStatus.Queued, "candidate acquisition", ct);
             return true;
         }
     }
@@ -205,7 +234,8 @@ public sealed class Worker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MusicSyncDbContext>();
         var jobId = await db.DownloadJobs
-            .Where(item => item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved)
+            .Where(item => (item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved)
+                && (item.NextAttemptAt == null || item.NextAttemptAt <= DateTime.UtcNow))
             .OrderBy(item => item.CreatedAt)
             .ThenBy(item => item.Id)
             .Select(item => (int?)item.Id)
@@ -216,9 +246,12 @@ public sealed class Worker : BackgroundService
 
         var claimed = await db.DownloadJobs
             .Where(item => item.Id == jobId.Value
-                && (item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved))
+                && (item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved)
+                && (item.NextAttemptAt == null || item.NextAttemptAt <= DateTime.UtcNow))
             .ExecuteUpdateAsync(
-                setters => setters.SetProperty(item => item.Status, DownloadJobStatus.Downloading),
+                setters => setters
+                    .SetProperty(item => item.Status, DownloadJobStatus.Downloading)
+                    .SetProperty(item => item.NextAttemptAt, (DateTime?)null),
                 ct);
 
         if (claimed == 0)
@@ -321,8 +354,7 @@ public sealed class Worker : BackgroundService
 
             db.ChangeTracker.Clear();
             var failed = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, CancellationToken.None);
-            Fail(failed, ex.Message);
-            await db.SaveChangesAsync(CancellationToken.None);
+            await HandleFailureAsync(db, failed, ex, DownloadJobStatus.ReadyForTagging, "storage", CancellationToken.None);
             return true;
         }
         finally
@@ -352,10 +384,52 @@ public sealed class Worker : BackgroundService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    private static string Limit(string? value, int maxLength)
+    {
+        var text = value ?? string.Empty;
+        return text.Length <= maxLength ? text : text[..maxLength];
+    }
+
     private static void DeleteIfExists(string? path)
     {
         if (path is not null && File.Exists(path))
             File.Delete(path);
+    }
+
+    private async Task HandleFailureAsync(
+        MusicSyncDbContext db,
+        DownloadJob job,
+        Exception ex,
+        string retryStatus,
+        string stage,
+        CancellationToken ct)
+    {
+        if (TransientErrors.IsTransient(ex))
+        {
+            if (job.AutomaticRetries < _retryPolicy.MaxAutomaticRetries)
+            {
+                job.AutomaticRetries++;
+                job.Status = retryStatus;
+                job.NextAttemptAt = DateTime.UtcNow + _retryPolicy.DelayForRetry(job.AutomaticRetries);
+                job.FinishedAt = null;
+                job.Error = Limit(
+                    $"Transient {stage} error; automatic retry {job.AutomaticRetries} of {_retryPolicy.MaxAutomaticRetries}: {ex.Message}",
+                    500);
+                _logger.LogWarning(
+                    "Job {JobId} will retry {Stage} at {NextAttemptAt} after a transient error.",
+                    job.Id, stage, job.NextAttemptAt);
+            }
+            else
+            {
+                Fail(job, Limit($"Failed after {job.AutomaticRetries + 1} attempts ({stage}): {ex.Message}", 500));
+            }
+        }
+        else
+        {
+            Fail(job, Limit(ex.Message, 500));
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static void Fail(DownloadJob job, string error)
@@ -363,6 +437,7 @@ public sealed class Worker : BackgroundService
         job.Status = DownloadJobStatus.Failed;
         job.Error = error;
         job.FinishedAt = DateTime.UtcNow;
+        job.NextAttemptAt = null;
     }
 }
 

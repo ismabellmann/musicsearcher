@@ -40,7 +40,7 @@ public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
 
         var (exitCode, stdout, stderr) = await ExternalProcess.RunAsync(startInfo, ct);
         if (exitCode != 0)
-            throw new InvalidOperationException($"yt-dlp falló al buscar: {ExternalProcess.LastLine(stderr)}");
+            throw ToFailure("yt-dlp falló al buscar", stderr);
 
         return YtDlpSearchParser.Parse(stdout, max)
             .Select(video => new SourceCandidate
@@ -50,6 +50,22 @@ public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
                 DurationMs = video.DurationMs
             })
             .ToList();
+    }
+
+    private static readonly string[] TransientMarkers =
+    {
+        "HTTP Error 429", "HTTP Error 500", "HTTP Error 502", "HTTP Error 503", "HTTP Error 504",
+        "Too Many Requests", "timed out", "Connection reset", "Temporary failure",
+        "Unable to download webpage", "Network is unreachable", "Connection refused"
+    };
+
+    private static Exception ToFailure(string message, string stderr)
+    {
+        var detail = ExternalProcess.LastLine(stderr);
+        var text = $"{message}: {detail}";
+        return TransientMarkers.Any(marker => stderr.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            ? new TransientAcquisitionException(text)
+            : new InvalidOperationException(text);
     }
 
     public async Task<DownloadedFile> DownloadAsync(SourceCandidate candidate, CancellationToken ct)
@@ -75,7 +91,7 @@ public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
 
             var (exitCode, _, stderr) = await ExternalProcess.RunAsync(startInfo, ct);
             if (exitCode != 0)
-                throw new InvalidOperationException($"yt-dlp falló al descargar: {ExternalProcess.LastLine(stderr)}");
+                throw ToFailure("yt-dlp falló al descargar", stderr);
 
             var file = Directory.EnumerateFiles(directory).FirstOrDefault()
                 ?? throw new InvalidOperationException("yt-dlp no produjo ningún archivo de audio.");

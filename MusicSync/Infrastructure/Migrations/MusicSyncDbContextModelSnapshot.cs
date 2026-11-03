@@ -73,6 +73,9 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AutomaticRetries")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -85,6 +88,9 @@ namespace MusicSync.Infrastructure.Migrations
 
                     b.Property<float?>("MatchScore")
                         .HasColumnType("real");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("OutputPath")
                         .HasMaxLength(500)
@@ -112,6 +118,46 @@ namespace MusicSync.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DownloadJobs");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.DownloadJobCandidate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DownloadJobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<float>("Score")
+                        .HasColumnType("real");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DownloadJobId", "Rank")
+                        .IsUnique();
+
+                    b.ToTable("DownloadJobCandidates");
                 });
 
             modelBuilder.Entity("MusicSync.Infrastructure.LibraryFile", b =>
@@ -243,6 +289,17 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("UserAccounts");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.DownloadJobCandidate", b =>
+                {
+                    b.HasOne("MusicSync.Infrastructure.DownloadJob", "DownloadJob")
+                        .WithMany("Candidates")
+                        .HasForeignKey("DownloadJobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DownloadJob");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.TrackArtist", b =>
                 {
                     b.HasOne("MusicSync.Infrastructure.Artist", "Artist")
@@ -260,6 +317,11 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Navigation("Artist");
 
                     b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.DownloadJob", b =>
+                {
+                    b.Navigation("Candidates");
                 });
 
             modelBuilder.Entity("MusicSync.Infrastructure.Track", b =>

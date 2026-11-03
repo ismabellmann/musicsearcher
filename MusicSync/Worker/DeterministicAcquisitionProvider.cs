@@ -33,6 +33,6 @@ public sealed class DeterministicAcquisitionProvider : IAcquisitionProvider
 
     public Task<DownloadedFile> DownloadAsync(SourceCandidate candidate, CancellationToken ct)
     {
-        return Task.FromResult(new DownloadedFile { FilePath = string.Empty });
+        throw new NotSupportedException("El proveedor 'deterministic' no entrega audio; use el proveedor 'local'.");
     }
 }

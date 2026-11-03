@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MusicSync.Api.Models;
 using MusicSync.Core;
 using MusicSync.Infrastructure;
+using MusicSync.Worker;
 
 namespace MusicSync.Api.Controllers;
 
@@ -11,10 +12,12 @@ namespace MusicSync.Api.Controllers;
 public sealed class DownloadsController : ControllerBase
 {
     private readonly MusicSyncDbContext _db;
+    private readonly IReadOnlyCollection<string> _providerNames;
 
-    public DownloadsController(MusicSyncDbContext db)
+    public DownloadsController(MusicSyncDbContext db, IEnumerable<IAcquisitionProvider> providers)
     {
         _db = db;
+        _providerNames = providers.Select(provider => provider.Name).ToList();
     }
 
     [HttpPost]
@@ -33,31 +36,22 @@ public sealed class DownloadsController : ControllerBase
                 "Se requiere un identificador de MusicBrainz y el título de la canción."));
         }
 
-        var track = await _db.Tracks.SingleOrDefaultAsync(
-            item => item.RecordingMbid == request.Track.RecordingMbid,
-            ct);
+        var providerName = string.IsNullOrWhiteSpace(request.Provider) ? "deterministic" : request.Provider.Trim();
+        if (!_providerNames.Contains(providerName, StringComparer.Ordinal))
+        {
+            return BadRequest(ApiResponse<DownloadJobCreated>.Failure(
+                StatusCodes.Status400BadRequest,
+                "El proveedor de adquisición indicado no está disponible."));
+        }
 
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
-        if (track is null)
-        {
-            track = new Track
-            {
-                RecordingMbid = request.Track.RecordingMbid,
-                Title = request.Track.Title,
-                ArtistName = request.Track.GetPrimaryArtistName() ?? string.Empty,
-                AlbumTitle = request.Track.AlbumTitle,
-                Isrc = request.Track.Isrc,
-                DurationMs = request.Track.DurationMs
-            };
-            _db.Tracks.Add(track);
-            await _db.SaveChangesAsync(ct);
-        }
+        var track = await TrackCatalog.GetOrCreateTrackAsync(_db, request.Track, ct);
 
         var job = new DownloadJob
         {
             TrackId = track.Id,
             Status = DownloadJobStatus.Queued,
-            ProviderName = "deterministic"
+            ProviderName = providerName
         };
         _db.DownloadJobs.Add(job);
         await _db.SaveChangesAsync(ct);
@@ -183,7 +177,7 @@ public sealed class DownloadsController : ControllerBase
         var job = await FindJobSummaryAsync(id, ct);
         return Ok(ApiResponse<DownloadJobSummary>.Success(
             StatusCodes.Status200OK,
-            "Candidato aprobado. La descarga no se inicia en esta versión.",
+            "Candidato aprobado. La descarga se iniciará en la cola.",
             job!));
     }
 
@@ -306,7 +300,7 @@ public sealed class DownloadsController : ControllerBase
     }
 }
 
-public sealed record CreateDownloadRequest(TrackInfo Track);
+public sealed record CreateDownloadRequest(TrackInfo Track, string? Provider = null);
 
 public sealed record DownloadJobCreated(int JobId, string JobStatus);
 

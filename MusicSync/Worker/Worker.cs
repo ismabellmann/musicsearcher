@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -8,28 +9,39 @@ using MusicSync.Infrastructure;
 namespace MusicSync.Worker;
 
 /// <summary>
-/// Processes persisted download jobs and stops after selecting a candidate,
-/// leaving the job ready for the later tagging pipeline.
+/// Processes persisted download jobs. Queued jobs are matched to the best candidate and then
+/// marked ReadyForTagging; ready and approved jobs are downloaded, transcoded, stored in the library, and marked Done.
 /// </summary>
 public sealed class Worker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+    private const string DefaultProviderName = "deterministic";
+    private const int MaxCandidates = 10;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<Worker> _logger;
-    private readonly IAcquisitionProvider _acquisitionProvider;
+    private readonly IReadOnlyDictionary<string, IAcquisitionProvider> _providers;
     private readonly IMatchScorer _matchScorer;
+    private readonly LibraryPathResolver _pathResolver;
+    private readonly FfmpegAudioTranscoder _transcoder;
+    private readonly LibraryOptions _library;
 
     public Worker(
         IServiceScopeFactory scopeFactory,
         ILogger<Worker> logger,
-        IAcquisitionProvider acquisitionProvider,
-        IMatchScorer matchScorer)
+        IEnumerable<IAcquisitionProvider> providers,
+        IMatchScorer matchScorer,
+        LibraryPathResolver pathResolver,
+        FfmpegAudioTranscoder transcoder,
+        LibraryOptions library)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
-        _acquisitionProvider = acquisitionProvider;
+        _providers = providers.ToDictionary(provider => provider.Name, StringComparer.Ordinal);
         _matchScorer = matchScorer;
+        _pathResolver = pathResolver;
+        _transcoder = transcoder;
+        _library = library;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,7 +53,9 @@ public sealed class Worker : BackgroundService
         {
             try
             {
-                if (!await ProcessNextJobAsync(stoppingToken))
+                var matched = await ProcessNextJobAsync(stoppingToken);
+                var stored = await ProcessNextReadyJobAsync(stoppingToken);
+                if (!matched && !stored)
                     await Task.Delay(PollInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -62,12 +76,19 @@ public sealed class Worker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MusicSyncDbContext>();
+
         await db.DownloadJobs
             .Where(job => job.Status == DownloadJobStatus.Resolving || job.Status == DownloadJobStatus.Searching)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(job => job.Status, DownloadJobStatus.Queued)
                     .SetProperty(job => job.FinishedAt, (DateTime?)null),
+                ct);
+
+        await db.DownloadJobs
+            .Where(job => job.Status == DownloadJobStatus.Downloading || job.Status == DownloadJobStatus.Tagging)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(job => job.Status, DownloadJobStatus.ReadyForTagging),
                 ct);
     }
 
@@ -103,14 +124,9 @@ public sealed class Worker : BackgroundService
 
         try
         {
-            if (!string.IsNullOrEmpty(job.ProviderName)
-                && !string.Equals(job.ProviderName, _acquisitionProvider.Name, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"Acquisition provider '{job.ProviderName}' is not registered.");
-            }
+            var provider = ResolveProvider(job.ProviderName);
 
-            var track = await db.Tracks.FindAsync(new object[] { job.TrackId }, ct);
+            var track = await TrackCatalog.FindWithArtistsAsync(db, job.TrackId, ct);
             if (track is null)
             {
                 Fail(job, $"Track {job.TrackId} was not found");
@@ -118,20 +134,12 @@ public sealed class Worker : BackgroundService
                 return true;
             }
 
-            var trackInfo = new TrackInfo
-            {
-                RecordingMbid = track.RecordingMbid,
-                Title = track.Title,
-                ArtistName = track.ArtistName,
-                AlbumTitle = track.AlbumTitle,
-                Isrc = track.Isrc,
-                DurationMs = track.DurationMs
-            };
+            var trackInfo = ToTrackInfo(track);
 
             job.Status = DownloadJobStatus.Searching;
             await db.SaveChangesAsync(ct);
 
-            var candidates = await _acquisitionProvider.FindCandidatesAsync(trackInfo, 5, ct);
+            var candidates = await provider.FindCandidatesAsync(trackInfo, MaxCandidates, ct);
             if (candidates.Count == 0)
             {
                 Fail(job, "No matching candidates found");
@@ -192,6 +200,164 @@ public sealed class Worker : BackgroundService
         }
     }
 
+    private async Task<bool> ProcessNextReadyJobAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MusicSyncDbContext>();
+        var jobId = await db.DownloadJobs
+            .Where(item => item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved)
+            .OrderBy(item => item.CreatedAt)
+            .ThenBy(item => item.Id)
+            .Select(item => (int?)item.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (jobId is null)
+            return false;
+
+        var claimed = await db.DownloadJobs
+            .Where(item => item.Id == jobId.Value
+                && (item.Status == DownloadJobStatus.ReadyForTagging || item.Status == DownloadJobStatus.Approved))
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.Status, DownloadJobStatus.Downloading),
+                ct);
+
+        if (claimed == 0)
+            return true;
+
+        var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, ct);
+        string? stagedSource = null;
+        string? stagedMp3 = null;
+        string? movedTarget = null;
+        string? temporaryDirectory = null;
+
+        try
+        {
+            var provider = ResolveProvider(job.ProviderName);
+            var track = await TrackCatalog.FindWithArtistsAsync(db, job.TrackId, ct);
+            if (track is null)
+            {
+                Fail(job, $"Track {job.TrackId} was not found");
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(job.SourceUrl))
+            {
+                Fail(job, "No hay un origen seleccionado para este trabajo.");
+                await db.SaveChangesAsync(ct);
+                return true;
+            }
+
+            var trackInfo = ToTrackInfo(track);
+            var libraryRoot = Path.GetFullPath(_library.Root);
+            var stagingDirectory = Path.GetFullPath(_library.StagingDirectory);
+            Directory.CreateDirectory(stagingDirectory);
+
+            var downloaded = await provider.DownloadAsync(
+                new SourceCandidate { Title = track.Title, SourceUrl = job.SourceUrl },
+                ct);
+
+            if (string.IsNullOrEmpty(downloaded.FilePath))
+                throw new InvalidOperationException("El proveedor no entregó un archivo de audio.");
+
+            if (downloaded.IsTemporary)
+                temporaryDirectory = Path.GetDirectoryName(downloaded.FilePath);
+
+            stagedSource = Path.Combine(stagingDirectory, $"{job.Id}.source{Path.GetExtension(downloaded.FilePath)}");
+            File.Copy(downloaded.FilePath, stagedSource, overwrite: true);
+
+            job.Status = DownloadJobStatus.Tagging;
+            await db.SaveChangesAsync(ct);
+
+            stagedMp3 = Path.Combine(stagingDirectory, $"{job.Id}.mp3");
+            await _transcoder.TranscodeToMp3Async(stagedSource, stagedMp3, trackInfo, ct);
+
+            var target = _pathResolver.ResolveWithinRoot(libraryRoot, trackInfo, asSingle: true, ".mp3");
+            if (File.Exists(target))
+            {
+                job.Status = DownloadJobStatus.Done;
+                job.Error = "AlreadyExists";
+                job.OutputPath = target;
+                job.FinishedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+                _logger.LogInformation("Job {JobId} skipped: {Path} already exists.", job.Id, target);
+                return true;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Move(stagedMp3, target, overwrite: false);
+            movedTarget = target;
+
+            db.LibraryFiles.Add(new LibraryFile
+            {
+                TrackId = job.TrackId,
+                RelativePath = Path.GetRelativePath(libraryRoot, target),
+                Format = "mp3",
+                SizeBytes = new FileInfo(target).Length,
+                Sha256 = await ComputeSha256Async(target, ct),
+                AddedAt = DateTime.UtcNow
+            });
+
+            job.Status = DownloadJobStatus.Done;
+            job.Error = null;
+            job.OutputPath = target;
+            job.FinishedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            movedTarget = null;
+
+            _logger.LogInformation("Job {JobId} stored at {Path}.", job.Id, target);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Job {JobId} failed while storing the file.", job.Id);
+
+            if (movedTarget is not null && File.Exists(movedTarget))
+                File.Delete(movedTarget);
+
+            db.ChangeTracker.Clear();
+            var failed = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, CancellationToken.None);
+            Fail(failed, ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return true;
+        }
+        finally
+        {
+            DeleteIfExists(stagedSource);
+            DeleteIfExists(stagedMp3);
+            if (temporaryDirectory is not null && Directory.Exists(temporaryDirectory))
+                Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    private IAcquisitionProvider ResolveProvider(string? name)
+    {
+        var key = string.IsNullOrEmpty(name) ? DefaultProviderName : name;
+        if (!_providers.TryGetValue(key, out var provider))
+            throw new InvalidOperationException($"Acquisition provider '{key}' is not registered.");
+
+        return provider;
+    }
+
+    private static TrackInfo ToTrackInfo(Track track) => TrackCatalog.ToTrackInfo(track);
+
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream, ct);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void DeleteIfExists(string? path)
+    {
+        if (path is not null && File.Exists(path))
+            File.Delete(path);
+    }
+
     private static void Fail(DownloadJob job, string error)
     {
         job.Status = DownloadJobStatus.Failed;
@@ -204,6 +370,9 @@ public record DownloadedFile
 {
     public string FilePath { get; init; } = string.Empty;
     public byte[]? CoverArtBytes { get; init; }
+
+    /// <summary>True when the provider created FilePath inside its own work directory, which the worker removes after use.</summary>
+    public bool IsTemporary { get; init; }
 }
 
 /// <summary>

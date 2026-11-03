@@ -25,8 +25,32 @@ var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
     DataSource = databasePath
 }.ToString();
 builder.Services.AddDbContext<MusicSyncDbContext>(options => options.UseSqlite(connectionString));
+var tracksDirectory = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "tracks"));
+var libraryOptions = builder.Configuration.GetSection("Library").Get<LibraryOptions>() ?? new LibraryOptions();
+if (string.IsNullOrWhiteSpace(libraryOptions.Root))
+    libraryOptions.Root = tracksDirectory;
+if (string.IsNullOrWhiteSpace(libraryOptions.StagingDirectory))
+    libraryOptions.StagingDirectory = Path.Combine(builder.Environment.ContentRootPath, "data", "staging");
+
+var audioOptions = builder.Configuration.GetSection("Audio").Get<AudioOptions>() ?? new AudioOptions();
+var toolOptions = builder.Configuration.GetSection("Tools").Get<ToolOptions>() ?? new ToolOptions();
+var acquisitionOptions = builder.Configuration.GetSection("Acquisition").Get<AcquisitionOptions>() ?? new AcquisitionOptions();
+if (string.IsNullOrWhiteSpace(acquisitionOptions.LocalSourceDirectory))
+    acquisitionOptions.LocalSourceDirectory = tracksDirectory;
+
+builder.Services.AddSingleton(libraryOptions);
+builder.Services.AddSingleton(audioOptions);
+builder.Services.AddSingleton(toolOptions);
+builder.Services.AddSingleton(new FfmpegAudioTranscoder(toolOptions, audioOptions));
+builder.Services.AddSingleton<LibraryPathResolver>();
 builder.Services.AddSingleton<IMatchScorer, TrackScorer>();
 builder.Services.AddSingleton<IAcquisitionProvider, DeterministicAcquisitionProvider>();
+builder.Services.AddSingleton<IAcquisitionProvider>(serviceProvider => new LocalFileAcquisitionProvider(
+    acquisitionOptions.LocalSourceDirectory,
+    serviceProvider.GetRequiredService<FfmpegAudioTranscoder>()));
+builder.Services.AddSingleton<IAcquisitionProvider>(_ => new YtDlpAcquisitionProvider(
+    toolOptions,
+    Path.Combine(libraryOptions.StagingDirectory, "downloads")));
 builder.Services.AddSingleton<Worker>();
 builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<Worker>());
 

@@ -45,6 +45,22 @@ public class LibraryPathResolver : ILibraryPathResolver
     }
 
     /// <summary>
+    /// Resolves the track path under a concrete library root and rejects any result outside it.
+    /// </summary>
+    public string ResolveWithinRoot(string libraryRoot, TrackInfo track, bool asSingle, string extension)
+    {
+        var root = Path.GetFullPath(libraryRoot);
+        var pattern = Resolve(track, asSingle, extension);
+        var relative = pattern.Substring(LibraryRootPlaceholder.Length + 1);
+        var fullPath = Path.GetFullPath(Path.Combine(root, relative));
+
+        if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidOperationException("La ruta resuelta queda fuera de la biblioteca.");
+
+        return fullPath;
+    }
+
+    /// <summary>
     /// Sanitizes a string to be safe for use in file names.
     /// Prevents path traversal attacks per section 11 requirements.
     /// </summary>

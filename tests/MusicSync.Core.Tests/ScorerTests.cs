@@ -27,7 +27,7 @@ public class TrackScorerTests
         // Act
         var result = _sut.Score(track, new SourceCandidate
         {
-            Title = "Test Song",
+            Title = "Test Song - Test Artist",
             SourceUrl = "https://example.com",
             Format = ".mp3",
             DurationMs = 180000
@@ -53,9 +53,10 @@ public class TrackScorerTests
         // Act
         var result = _sut.Score(track, new SourceCandidate
         {
-            Title = "Test Song",
+            Title = "Test Song - Test Artist",
             SourceUrl = "https://example.com",
-            Format = ".mp3"
+            Format = ".mp3",
+            DurationMs = 100000
         });
 
         // Assert

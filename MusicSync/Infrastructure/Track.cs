@@ -15,6 +15,7 @@ public class Track
     [MaxLength(500)]
     public string Title { get; set; } = string.Empty;
 
+    /// <summary>Display credit built from TrackArtists (for example "A & B").</summary>
     [MaxLength(200)]
     public string ArtistName { get; set; } = string.Empty;
 
@@ -25,4 +26,6 @@ public class Track
     public string? Isrc { get; set; }
 
     public int DurationMs { get; set; }
+
+    public ICollection<TrackArtist> TrackArtists { get; set; } = new List<TrackArtist>();
 }

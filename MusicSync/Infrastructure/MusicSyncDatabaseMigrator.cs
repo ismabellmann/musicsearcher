@@ -9,6 +9,9 @@ public static class MusicSyncDatabaseMigrator
 {
     private const string HistoryTable = "__EFMigrationsHistory";
 
+    // Tables created by migrations after InitialCreate. Legacy baselining checks only the InitialCreate schema.
+    private static readonly string[] MigrationOnlyTables = { "TrackArtists" };
+
     public static async Task MigrateAsync(MusicSyncDbContext db, CancellationToken ct = default)
     {
         await BaselineEnsureCreatedDatabaseAsync(db, ct);
@@ -35,6 +38,12 @@ public static class MusicSyncDatabaseMigrator
                 return;
 
             var expectedTables = GetExpectedTables(db);
+            foreach (var migrationOnlyTable in MigrationOnlyTables)
+            {
+                actualTables.Remove(migrationOnlyTable);
+                expectedTables.Remove(migrationOnlyTable);
+            }
+
             if (!actualTables.SetEquals(expectedTables.Keys))
             {
                 throw new InvalidOperationException(

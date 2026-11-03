@@ -60,7 +60,7 @@ public class TrackScorer : IMatchScorer
             reasons.Append($"artist:{artistScore:F2}; ");
 
         // 4. Penalties for unwanted features (can subtract up to 0.15)
-        var penalty = CalculatePenalties(candidate.Title);
+        var penalty = CalculatePenalties(target.Title, candidate.Title);
         score -= penalty;
         if (penalty > 0)
             reasons.Append($"penalty:{penalty:F2}; ");
@@ -119,7 +119,7 @@ public class TrackScorer : IMatchScorer
         var normalizedCandidate = NormalizeTitle(candidateTitle);
 
         if (string.Equals(normalizedTarget, normalizedCandidate, StringComparison.Ordinal))
-            return 0.6;
+            return 0.3;
 
         // Simple similarity: count matching words
         var targetWords = normalizedTarget.Split(' ');
@@ -155,40 +155,44 @@ public class TrackScorer : IMatchScorer
 
     /// <summary>
     /// Calculates artist name similarity (0.0 to 0.2).
+    /// The artist name must appear as a whole-word phrase in the candidate title.
     /// </summary>
     private double CalculateArtistScore(string? targetArtist, string candidateTitle)
     {
-        if (string.IsNullOrWhiteSpace(targetArtist))
+        if (string.IsNullOrWhiteSpace(targetArtist) || string.IsNullOrWhiteSpace(candidateTitle))
             return 0.0;
 
-        // In a full implementation, we'd extract artist from candidate
-        // For now, return based on title patterns
-        return 0.0;
+        var normalizedArtist = NormalizeTitle(targetArtist);
+        var normalizedCandidate = NormalizeTitle(candidateTitle);
+        if (normalizedArtist.Length == 0)
+            return 0.0;
+
+        return $" {normalizedCandidate} ".Contains($" {normalizedArtist} ", StringComparison.Ordinal) ? 0.2 : 0.0;
     }
 
     /// <summary>
     /// Calculates penalties for unwanted features (0.0 to 0.15).
     /// Penalties: live, concert, remix, cover, karaoke, sped up, slowed, reverb, 8d.
-    /// Small bonus if the target title itself contains these words.
+    /// A penalty applies only when the target title does not contain the same word (section 8.4).
     /// </summary>
-    private double CalculatePenalties(string candidateTitle)
+    private double CalculatePenalties(string targetTitle, string candidateTitle)
     {
         var penalty = 0.0;
-        var lowerTitle = candidateTitle.ToLowerInvariant();
+        var lowerCandidate = candidateTitle.ToLowerInvariant();
+        var lowerTarget = (targetTitle ?? string.Empty).ToLowerInvariant();
 
         var penaltyWords = new[] { "live", "concert", "remix", "cover", "karaoke", "sped up", "slowed", "reverb", "8d" };
 
         foreach (var word in penaltyWords)
         {
-            if (lowerTitle.Contains(word))
-            {
-                // Check if the target title also contains this word (smaller penalty)
-                var targetLower = /* target title */ "";
-                if (!string.IsNullOrWhiteSpace(targetLower) && targetLower.Contains(word))
-                    penalty += 0.02; // Small penalty if target has it too
-                else
-                    penalty += 0.05; // Larger penalty if target doesn't have it
-            }
+            var pattern = $@"\b{System.Text.RegularExpressions.Regex.Escape(word)}\b";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(lowerCandidate, pattern))
+                continue;
+
+            if (System.Text.RegularExpressions.Regex.IsMatch(lowerTarget, pattern))
+                continue;
+
+            penalty += 0.05;
         }
 
         return Math.Min(penalty, 0.15);

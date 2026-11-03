@@ -1,95 +1,92 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using MusicSync.Core;
+using MusicSync.Infrastructure;
 
 namespace MusicSync.Worker;
 
 /// <summary>
-/// yt-dlp based acquisition provider for downloading audio.
-/// Wraps the yt-dlp executable (or YoutubeDLSharp library) to find and download audio sources.
+/// yt-dlp acquisition provider. Searches for candidates and downloads the selected video's audio
+/// into a temporary work directory. Every argument is passed through ArgumentList; the video URL
+/// is validated and placed after "--" so it cannot be read as an option.
 /// </summary>
-public class YtDlpAcquisitionProvider : IAcquisitionProvider
+public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
 {
-    private readonly ILogger<YtDlpAcquisitionProvider> _logger;
+    private readonly ToolOptions _tools;
+    private readonly string _workRoot;
 
-    public YtDlpAcquisitionProvider()
+    public YtDlpAcquisitionProvider(ToolOptions tools, string workRoot)
     {
-        _logger = null!; // Will be set by the logging provider
+        _tools = tools;
+        _workRoot = Path.GetFullPath(workRoot);
     }
 
     public string Name => "yt-dlp";
 
-    /// <summary>
-    /// Find audio candidates for a given track by searching various sources.
-    /// </summary>
-    public Task<IReadOnlyList<SourceCandidate>> FindCandidatesAsync(TrackInfo track, int max, CancellationToken ct)
+    public async Task<IReadOnlyList<SourceCandidate>> FindCandidatesAsync(TrackInfo track, int max, CancellationToken ct)
     {
-        _logger.LogInformation("Finding candidates for track: {Title} by {Artist}", track.Title, track.ArtistName);
+        if (string.IsNullOrWhiteSpace(track.Title) || max <= 0)
+            return Array.Empty<SourceCandidate>();
 
-        var candidates = new List<SourceCandidate>();
+        var query = string.IsNullOrWhiteSpace(track.ArtistName)
+            ? track.Title
+            : $"{track.Title} - {track.ArtistName}";
 
-        // TODO: Implement actual yt-dlp search integration
-        // For now, return empty list - the real implementation would:
-        // 1. Construct yt-dlp search queries
-        // 2. Parse JSON output
-        // 3. Return top max candidates with title, source URL, format, cover art
+        var startInfo = ExternalProcess.CreateStartInfo(_tools.YtDlp);
+        startInfo.ArgumentList.Add("--flat-playlist");
+        startInfo.ArgumentList.Add("--dump-json");
+        startInfo.ArgumentList.Add("--skip-download");
+        startInfo.ArgumentList.Add("--no-warnings");
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add($"ytsearch{max}:{query}");
 
-        // Placeholder: return a single candidate with dummy data
-        // In production, this would use yt-dlp or YoutubeDLSharp
-        if (string.IsNullOrWhiteSpace(track.Title))
-        {
-            return Task.FromResult<IReadOnlyList<SourceCandidate>>(candidates);
-        }
+        var (exitCode, stdout, stderr) = await ExternalProcess.RunAsync(startInfo, ct);
+        if (exitCode != 0)
+            throw new InvalidOperationException($"yt-dlp falló al buscar: {ExternalProcess.LastLine(stderr)}");
 
-        // Dummy candidate for compilation testing
-        candidates.Add(new SourceCandidate
-        {
-            Title = $"{track.Title} (audio)",
-            SourceUrl = $"ytsearch1:{track.Title} {track.ArtistName}",
-            Format = ".mp3",
-            FilePath = string.Empty,
-            CoverArtBytes = Array.Empty<byte>()
-        });
-
-        return Task.FromResult<IReadOnlyList<SourceCandidate>>(candidates.Take(max).ToList());
+        return YtDlpSearchParser.Parse(stdout, max)
+            .Select(video => new SourceCandidate
+            {
+                Title = video.Title,
+                SourceUrl = YtDlpSearchParser.ToWatchUrl(video.VideoId),
+                DurationMs = video.DurationMs
+            })
+            .ToList();
     }
 
-    /// <summary>
-    /// Download and convert audio from a candidate source.
-    /// </summary>
     public async Task<DownloadedFile> DownloadAsync(SourceCandidate candidate, CancellationToken ct)
     {
-        _logger.LogInformation("Downloading candidate: {Title} from {Url}", candidate.Title, candidate.SourceUrl);
+        if (!YtDlpSearchParser.IsWatchUrl(candidate.SourceUrl))
+            throw new InvalidOperationException("La URL de origen no es un video de YouTube válido.");
 
-        var result = new DownloadedFile
-        {
-            FilePath = System.IO.Path.GetTempFileName(),
-            CoverArtBytes = Array.Empty<byte>()
-        };
+        var directory = Path.Combine(_workRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
 
-        // TODO: Implement actual yt-dlp download
-        // The real implementation would:
-        // 1. Construct yt-dlp command with ArgumentList (no shell injection)
-        // 2. Execute yt-dlp to download and convert to target format
-        // 3. Return the downloaded file path and any embedded cover art
-        // 4. Handle errors and retries
-
-        // For now, create a dummy file so the pipeline can continue
         try
         {
-            await Task.Delay(100, ct); // Simulate work
-            // Don't actually create the file here - the real implementation will
-        }
-        catch (OperationCanceledException)
-        {
-            result = new DownloadedFile { FilePath = string.Empty, CoverArtBytes = Array.Empty<byte>() };
-        }
+            var startInfo = ExternalProcess.CreateStartInfo(_tools.YtDlp);
+            startInfo.ArgumentList.Add("--no-playlist");
+            startInfo.ArgumentList.Add("--no-part");
+            startInfo.ArgumentList.Add("--no-warnings");
+            startInfo.ArgumentList.Add("-f");
+            startInfo.ArgumentList.Add("bestaudio");
+            startInfo.ArgumentList.Add("-o");
+            startInfo.ArgumentList.Add(Path.Combine(directory, "source.%(ext)s"));
+            startInfo.ArgumentList.Add("--");
+            startInfo.ArgumentList.Add(candidate.SourceUrl);
 
-        return result;
+            var (exitCode, _, stderr) = await ExternalProcess.RunAsync(startInfo, ct);
+            if (exitCode != 0)
+                throw new InvalidOperationException($"yt-dlp falló al descargar: {ExternalProcess.LastLine(stderr)}");
+
+            var file = Directory.EnumerateFiles(directory).FirstOrDefault()
+                ?? throw new InvalidOperationException("yt-dlp no produjo ningún archivo de audio.");
+
+            return new DownloadedFile { FilePath = file, IsTemporary = true };
+        }
+        catch
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+            throw;
+        }
     }
 }

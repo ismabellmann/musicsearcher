@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MusicSync.Api.Controllers;
@@ -63,7 +65,7 @@ public sealed class DownloadJobPersistenceTests
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
         Assert.True(await db.Database.CanConnectAsync());
-        Assert.Single(await db.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Tracks.ToListAsync());
     }
 
@@ -77,7 +79,8 @@ public sealed class DownloadJobPersistenceTests
             .Options;
 
         await using var db = new MusicSyncDbContext(options);
-        await db.Database.EnsureCreatedAsync();
+        await db.GetService<IMigrator>().MigrateAsync("20261029222411_InitialCreate");
+        await db.Database.ExecuteSqlRawAsync("DROP TABLE \"__EFMigrationsHistory\";");
         var track = new Track
         {
             RecordingMbid = Guid.NewGuid(),
@@ -90,7 +93,7 @@ public sealed class DownloadJobPersistenceTests
 
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
-        Assert.Single(await db.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var persistedTrack = await db.Tracks.SingleAsync();
         Assert.Equal(track.RecordingMbid, persistedTrack.RecordingMbid);
         Assert.Equal("Legacy Track", persistedTrack.Title);
@@ -135,7 +138,7 @@ public sealed class DownloadJobPersistenceTests
         await db.Database.EnsureCreatedAsync();
 
         var recordingMbid = Guid.NewGuid();
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var result = await controller.Create(
             new CreateDownloadRequest(new TrackInfo
             {
@@ -178,7 +181,7 @@ public sealed class DownloadJobPersistenceTests
         var second = await CreateJobAsync(db, track.Id, DownloadJobStatus.Queued);
         await CreateJobAsync(db, track.Id, DownloadJobStatus.Failed);
 
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var result = await controller.List(
             DownloadJobStatus.Queued,
             page: 1,
@@ -215,7 +218,7 @@ public sealed class DownloadJobPersistenceTests
 
         await using var db = new MusicSyncDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
 
         var result = await controller.Get(404, CancellationToken.None);
 
@@ -235,7 +238,7 @@ public sealed class DownloadJobPersistenceTests
 
         await using var db = new MusicSyncDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
 
         var invalidStatus = await controller.List("Unknown", 1, 50, CancellationToken.None);
         var statusResponse = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(invalidStatus.Result);
@@ -261,7 +264,7 @@ public sealed class DownloadJobPersistenceTests
         var queued = await CreateJobAsync(db, track.Id, DownloadJobStatus.Queued);
         var active = await CreateJobAsync(db, track.Id, DownloadJobStatus.Searching);
 
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var cancelledResult = await controller.Cancel(queued.Id, CancellationToken.None);
         var cancelledResponse = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(cancelledResult.Result);
         var cancelledBody = Assert.IsType<ApiResponse<DownloadJobSummary>>(cancelledResponse.Value);
@@ -294,13 +297,13 @@ public sealed class DownloadJobPersistenceTests
         reviewJob.FinishedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var result = await controller.Approve(reviewJob.Id, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result.Result);
         var body = Assert.IsType<ApiResponse<DownloadJobSummary>>(response.Value);
         Assert.Equal(200, body.Status);
-        Assert.Contains("La descarga no se inicia", body.Msg);
+        Assert.Contains("La descarga se iniciará", body.Msg);
         Assert.Equal(DownloadJobStatus.Approved, body.Data!.JobStatus);
         Assert.Equal("https://example.test/candidate", body.Data.SourceUrl);
         Assert.Equal(0.65f, body.Data.MatchScore);
@@ -327,7 +330,7 @@ public sealed class DownloadJobPersistenceTests
         var track = await CreateTrackAsync(db, "Already Queued Track");
         var queuedJob = await CreateJobAsync(db, track.Id, DownloadJobStatus.Queued);
 
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var result = await controller.Approve(queuedJob.Id, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(result.Result);
@@ -348,7 +351,7 @@ public sealed class DownloadJobPersistenceTests
 
         await using var db = new MusicSyncDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
 
         var result = await controller.Approve(404, CancellationToken.None);
 
@@ -376,7 +379,7 @@ public sealed class DownloadJobPersistenceTests
         failed.FinishedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var controller = new DownloadsController(db);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
         var result = await controller.Retry(failed.Id, CancellationToken.None);
 
         var response = Assert.IsType<Microsoft.AspNetCore.Mvc.AcceptedResult>(result.Result);
@@ -402,6 +405,10 @@ public sealed class DownloadJobPersistenceTests
         services.AddDbContext<MusicSyncDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton<IAcquisitionProvider, DeterministicAcquisitionProvider>();
         services.AddSingleton<IMatchScorer, TrackScorer>();
+        var stagingDirectory = Path.Combine(Path.GetTempPath(), "musicsync-worker-test-" + Guid.NewGuid().ToString("N"));
+        services.AddSingleton(new LibraryOptions { Root = Path.Combine(stagingDirectory, "library"), StagingDirectory = stagingDirectory });
+        services.AddSingleton(new FfmpegAudioTranscoder(new ToolOptions(), new AudioOptions()));
+        services.AddSingleton<LibraryPathResolver>();
         services.AddSingleton<MusicSync.Worker.Worker>();
 
         await using var serviceProvider = services.BuildServiceProvider();
@@ -446,7 +453,9 @@ public sealed class DownloadJobPersistenceTests
                 persistedJob = await db.DownloadJobs.AsNoTracking().SingleAsync(job => job.Id == jobId);
                 if (persistedJob.Status != "Queued"
                     && persistedJob.Status != "Resolving"
-                    && persistedJob.Status != "Searching")
+                    && persistedJob.Status != "Searching"
+                    && persistedJob.Status != "ReadyForTagging"
+                    && persistedJob.Status != "Downloading")
                 {
                     break;
                 }
@@ -454,11 +463,11 @@ public sealed class DownloadJobPersistenceTests
             }
 
             Assert.NotNull(persistedJob);
-            Assert.Equal("ReadyForTagging", persistedJob.Status);
+            Assert.Equal("NeedsReview", persistedJob.Status);
             Assert.Equal("deterministic", persistedJob.ProviderName);
             Assert.Equal($"deterministic://{(await ReadRecordingMbidAsync(serviceProvider, jobId))}", persistedJob.SourceUrl);
-            Assert.Equal(1.0f, persistedJob.MatchScore);
-            Assert.Null(persistedJob.Error);
+            Assert.Equal(0.7f, persistedJob.MatchScore!.Value, 3);
+            Assert.Contains("requires review", persistedJob.Error);
             Assert.NotNull(persistedJob.FinishedAt);
         }
         finally

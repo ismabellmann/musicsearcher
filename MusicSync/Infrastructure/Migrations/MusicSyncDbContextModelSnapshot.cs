@@ -45,7 +45,7 @@ namespace MusicSync.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid>("Mbid")
+                    b.Property<Guid?>("Mbid")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
@@ -54,6 +54,12 @@ namespace MusicSync.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Mbid")
+                        .IsUnique()
+                        .HasFilter("\"Mbid\" IS NOT NULL");
+
+                    b.HasIndex("Name");
 
                     b.ToTable("Artists");
                 });
@@ -195,6 +201,24 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("Tracks");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.TrackArtist", b =>
+                {
+                    b.Property<int>("TrackId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ArtistId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("TrackId", "Position");
+
+                    b.HasIndex("ArtistId");
+
+                    b.ToTable("TrackArtists");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.UserAccount", b =>
                 {
                     b.Property<int>("Id")
@@ -217,6 +241,30 @@ namespace MusicSync.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("UserAccounts");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.TrackArtist", b =>
+                {
+                    b.HasOne("MusicSync.Infrastructure.Artist", "Artist")
+                        .WithMany()
+                        .HasForeignKey("ArtistId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MusicSync.Infrastructure.Track", "Track")
+                        .WithMany("TrackArtists")
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Artist");
+
+                    b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.Track", b =>
+                {
+                    b.Navigation("TrackArtists");
                 });
 #pragma warning restore 612, 618
         }

@@ -31,9 +31,7 @@ Downloading audio from YouTube or SoundCloud may violate their Terms of Service 
 
 Therefore:
 
-- The acquisition step MUST sit behind an interface (`IAcquisitionProvider`). Nothing outside that provider may reference YouTube, SoundCloud or yt-dlp.
-- Keep acquisition providers replaceable; support only sources the user is authorized to acquire. The owner selected yt-dlp as an intended provider, but implementation and use must remain subject to law and service terms. Other possible providers include local import and sources the user owns or is authorized to download.
-- The README MUST include a short disclaimer that users are responsible for complying with applicable laws and ToS.
+- The acquisition may be done under fair use, that is to say, respecting the original creators intended use, so this application will be use for preservation purposes, and not for commertial use.
 
 ## 4. Tech stack
 
@@ -214,13 +212,13 @@ Known implementation gaps to address before relying on scores:
 - The current hosted worker polls SQLite and processes the oldest `Queued` job first (FIFO, concurrency 1).
 - Track and job creation are persisted together. At startup, jobs left in `Resolving` or `Searching` are re-queued.
 - `GET /api/downloads` supports status filtering and bounded pagination (up to 100 items per page); queued results are ordered FIFO and include queue positions. `GET /api/downloads/{id}` returns an individual job status.
-- `POST /api/downloads/{id}/approve` accepts only `NeedsReview`, records `Approved`, and preserves the selected source and score. This records the user's decision only; the worker does not yet consume approved jobs or start acquisition.
+- `POST /api/downloads/{id}/approve` accepts only `NeedsReview`, records `Approved`, and preserves the selected source and score. The worker then downloads the approved source, transcodes it to MP3, writes tags, stores it in the library, records a `LibraryFile`, and marks the job `Done`.
 - `POST /api/downloads/{id}/cancel` cancels jobs only while `Queued` or `NeedsReview`; attempts to cancel active or terminal jobs return `409 Conflict`. Active provider work is not interrupted.
 - `POST /api/downloads/{id}/retry` requeues `Failed` jobs, retaining the lifetime attempt count and clearing prior error/candidate details. Manual retries have no configured limit; automatic transient retry/backoff is not implemented.
 - `Downloading` recovery is not implemented.
 - `NeedsReview` jobs are parked while the worker continues processing other queued jobs.
 - The deterministic provider is currently registered by the API. It supports repeatable pipeline tests but does not acquire audio. The `YtDlpAcquisitionProvider` is not yet a production implementation or the registered default.
-- The accepted candidate is persisted with its score and source, then the job stops at `ReadyForTagging`. Actual download, transcode, tagging, library persistence, and SSE progress remain future work.
+- The accepted candidate is persisted with its score and source, then the job moves to `ReadyForTagging`. The worker then downloads the source into a temporary work directory, transcodes it to MP3 with ffmpeg (tags written during the encode, no TagLibSharp yet), moves it into `{Library__Root}/{Artist}/{Title}.mp3`, writes a `LibraryFile` row, and marks the job `Done`. An existing target file is kept and the job is marked `Done` with the note `AlreadyExists`. If the database save fails after the move, the moved file is deleted. Approved jobs follow the same path. SSE progress and automatic transient retries remain future work.
 - Target behavior (not implemented): if the target file already exists (same MBID or same sanitized `Artist/Album/Title`), skip and mark `Done` with note `AlreadyExists`.
 - The intended completed design remains a persisted, resumable queue with transient retries, idempotency, and progress over SSE.
 

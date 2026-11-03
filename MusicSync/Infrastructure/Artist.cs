@@ -8,8 +8,7 @@ public class Artist
     [Key]
     public int Id { get; set; }
 
-    [Required]
-    public Guid Mbid { get; set; }
+    public Guid? Mbid { get; set; }
 
     [Required]
     [MaxLength(200)]

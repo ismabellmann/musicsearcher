@@ -1,5 +1,9 @@
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -11,7 +15,7 @@ using MusicSync.Worker;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://localhost:5000");
+builder.WebHost.UseUrls(builder.Configuration["ASPNETCORE_URLS"] ?? "http://localhost:5000");
 
 var databasePath = builder.Configuration["Data:DatabasePath"]
     ?? Path.Combine(builder.Environment.ContentRootPath, "data", "musicsync.db");
@@ -47,7 +51,8 @@ var musicBrainzOptions = builder.Configuration.GetSection("MusicBrainz").Get<Mus
 var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingOptions>() ?? new MatchingOptions();
 var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
 
-var configurationErrors = MusicSyncOptionsValidator.Validate(musicBrainzOptions, matchingOptions, audioOptions, workerOptions);
+var authOptions = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
+var configurationErrors = MusicSyncOptionsValidator.Validate(musicBrainzOptions, matchingOptions, audioOptions, workerOptions, authOptions);
 if (configurationErrors.Count > 0)
     throw new InvalidOperationException("Invalid configuration: " + string.Join(" ", configurationErrors));
 
@@ -92,6 +97,42 @@ builder.Services.AddTransient<IPlaylistSource>(serviceProvider =>
     return new SpotifyPlaylistSource(httpClientFactory.CreateClient("Spotify"), logger, clientId, clientSecret);
 });
 
+var configDirectory = Path.GetFullPath(
+    builder.Configuration["Config:Dir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data", "config"),
+    builder.Environment.ContentRootPath);
+Directory.CreateDirectory(configDirectory);
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDirectory, "keys")));
+
+builder.Services.AddScoped<AccountService>();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "musicsync.session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = authOptions.SecureCookies
+            ? CookieSecurePolicy.Always
+            : CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromHours(authOptions.SessionHours);
+        options.SlidingExpiration = true;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    });
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -123,7 +164,31 @@ app.Use(async (context, next) =>
     }
 });
 
+// Until the first account exists, only these paths answer (section 11).
+var setupExemptPaths = new[] { "/api/health", "/api/auth/status", "/api/auth/setup" };
+
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? string.Empty;
+    if (!setupExemptPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+    {
+        var accounts = context.RequestServices.GetRequiredService<AccountService>();
+        if (!await accounts.IsSetupCompleteAsync(context.RequestAborted))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(ApiResponse<object?>.Failure(
+                StatusCodes.Status403Forbidden,
+                "Complete la configuración inicial para continuar."));
+            return;
+        }
+    }
+
+    await next(context);
+});
+
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/", () => "MusicSync API is running");
 app.MapControllers();

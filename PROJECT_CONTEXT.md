@@ -285,14 +285,14 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | GET | `/analytics/summary` | Aggregates |
 | GET/POST | `/settings` | Settings (secrets write-only, never returned) |
 
-Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns a plain-text liveness message. `/health`, authentication, search, playlists, SSE, library, analytics, and settings are not implemented yet.
+Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns a plain-text liveness message. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `password`) are implemented. Search and playlist endpoints exist; SSE, library, analytics, and settings are not implemented yet.
 
 ## 11. Security requirements (MUST)
 
 - **Path safety:** the library root is fixed by config. Any user-supplied path component MUST be sanitized, then the final path MUST be `Path.GetFullPath`-resolved and verified to start with the library root. Applies to download, delete and read-back. Reject `..`, absolute paths, and reserved names.
 - **No shell injection:** never build command lines by string concatenation. Use `ProcessStartInfo.ArgumentList`. Never pass user input as a flag (use `--` before positional args; validate URLs/IDs).
 - **Secrets:** (Spotify client secret, ListenBrainz token) stored encrypted via ASP.NET Data Protection, write-only through the API, never logged, never returned.
-- **Auth:** passwords hashed with Argon2id or ASP.NET `PasswordHasher`. Cookie auth with `HttpOnly`, `Secure`, `SameSite=Strict`. Until setup is complete, all routes except health and setup return 403.
+- **Auth:** passwords hashed with Argon2id or ASP.NET `PasswordHasher`. Cookie auth with `HttpOnly`, `Secure`, `SameSite=Strict`. Until setup is complete, all routes except health and setup return 403. Implemented: ASP.NET `PasswordHasher` (PBKDF2, salted); session cookie `HttpOnly` and `SameSite=Strict`, with `Secure` controlled by `Auth__SecureCookies` (default off so plain HTTP works); cookie-protection keys persisted under `Config__Dir`; first-run 403 gate. Not implemented: login rate limiting, server-side session revocation, encryption of the ListenBrainz and Spotify secrets, and inbound request size limits.
 - **Inbound hardening:** rate limiting, request size limits, strict CORS (default: none), HTTPS redirection and HSTS.
 - **Outbound hardening:** allowlist hosts for cover-art fetching (e.g. `coverartarchive.org`, `archive.org`). Reject others (SSRF protection).
 - **Docker:** run as non-root, mount only the library and config volumes.
@@ -317,9 +317,9 @@ Spotify__ClientSecret=       # optional
 
 Implementation status of this list:
 
-- Read by the code: `Data__DatabasePath`, `Library__Root` (default: `tracks/` at the repository root), `Library__StagingDirectory` (default: `data/staging` under the API content root), `Acquisition__LocalSourceDirectory` (default: `tracks/`), `Audio__Quality`, `Tools__Ffmpeg`, `Tools__Ffprobe`, `Tools__YtDlp`, `Worker__MaxAutomaticRetries`, `Worker__RetryBaseDelaySeconds`, `Matching__AutoAcceptThreshold`, `Matching__ReviewThreshold`, `Matching__DurationToleranceSeconds`, `MusicBrainz__UserAgent` (shared with ListenBrainz requests), `ListenBrainz__Token`, and `Spotify__ClientId`/`Spotify__ClientSecret`.
+- Read by the code: `ASPNETCORE_URLS` (default `http://localhost:5000`), `Config__Dir`, `Auth__SecureCookies`, `Auth__SessionHours`, `Data__DatabasePath`, `Library__Root` (default: `tracks/` at the repository root), `Library__StagingDirectory` (default: `data/staging` under the API content root), `Acquisition__LocalSourceDirectory` (default: `tracks/`), `Audio__Quality`, `Tools__Ffmpeg`, `Tools__Ffprobe`, `Tools__YtDlp`, `Worker__MaxAutomaticRetries`, `Worker__RetryBaseDelaySeconds`, `Matching__AutoAcceptThreshold`, `Matching__ReviewThreshold`, `Matching__DurationToleranceSeconds`, `MusicBrainz__UserAgent` (shared with ListenBrainz requests), `ListenBrainz__Token`, and `Spotify__ClientId`/`Spotify__ClientSecret`.
 - Validated at startup (the app stops with a clear error if they are invalid): `MusicBrainz__UserAgent` must look like `Name/Version (contact)`; `Matching__*` thresholds must be between 0 and 1, with review not above auto-accept; `Audio__Format` must be `mp3`; `Worker__Concurrency` must be `1`.
-- Not read yet: `Config__Dir` and `Auth__Disable` were removed from the sample until authentication exists.
+- Not read yet: `Auth__Disable` was removed from the sample; there is no authentication bypass.
 
 ## 13. Coding conventions
 

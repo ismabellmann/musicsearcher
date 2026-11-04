@@ -99,38 +99,89 @@ tests/
 
 ## Configuration
 
-Settings can be supplied through `appsettings.json` or environment variables:
+Settings come from environment variables or `appsettings.json`. A double underscore
+(`__`) separates nested sections, so `Library__Root` is the `Library:Root` setting.
+Relative paths resolve against the API content root. Defaults are shown below.
+
+### Server and storage
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ASPNETCORE_URLS` | `http://localhost:5000` | Address and port to listen on. Use `http://+:8080` inside a container. |
+| `Data__DatabasePath` | `data/musicsync.db` | SQLite database file. Put it on persistent storage. |
+| `Config__Dir` | `data/config` | Persistent folder for the cookie-protection keys. Keep it across restarts, or every session is signed out. |
+
+### Sign-in
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `Auth__SecureCookies` | `false` | Adds the `Secure` flag to the session cookie, so browsers send it only over HTTPS. Keep `false` when serving plain HTTP, or the browser will not keep the login. |
+| `Auth__SessionHours` | `168` | Session lifetime in hours, from 1 to 720. |
+
+### Library and acquisition
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `Library__Root` | `tracks/` at the repository root | Folder where finished MP3 files are stored. In Docker, use `/music`. |
+| `Library__StagingDirectory` | `data/staging` | Temporary work folder for downloads. |
+| `Acquisition__LocalSourceDirectory` | `tracks/` | Folder read by the local-file provider. |
+| `Audio__Format` | `mp3` | Output format. Only `mp3` is supported now. |
+| `Audio__Quality` | `0` | ffmpeg quality value for MP3 (0 is the highest quality). |
+| `Tools__Ffmpeg` | `ffmpeg` | ffmpeg executable name or full path. |
+| `Tools__Ffprobe` | `ffprobe` | ffprobe executable name or full path. |
+| `Tools__YtDlp` | `yt-dlp` | yt-dlp executable name or full path. |
+
+### Metadata services
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MusicBrainz__UserAgent` | `MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)` | Identifying User-Agent for MusicBrainz, in the form `Name/Version (contact)`. MusicBrainz needs no account or key. |
+| `ListenBrainz__Token` | empty | Optional ListenBrainz token. It is read but not yet sent with any request. |
+| `Spotify__ClientId` | empty | Optional Spotify app client ID, used by the current playlist client. |
+| `Spotify__ClientSecret` | empty | Optional Spotify app client secret, used by the current playlist client. |
+
+### Matching and worker
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `Matching__AutoAcceptThreshold` | `0.80` | Score from 0 to 1 at which a candidate is accepted automatically. |
+| `Matching__ReviewThreshold` | `0.50` | Score from 0 to 1 at which a candidate waits for review. Must not be above the auto-accept value. |
+| `Matching__DurationToleranceSeconds` | `5` | Length difference, in seconds, that still counts as a duration match. |
+| `Worker__Concurrency` | `1` | Jobs processed at once. Only `1` is supported now. |
+| `Worker__MaxAutomaticRetries` | `2` | Retries for transient failures (rate limits, network errors, timeouts) before a job fails. |
+| `Worker__RetryBaseDelaySeconds` | `30` | First retry delay. Each later retry doubles it, up to 10 minutes. |
+
+Invalid values stop the application at startup with a message that names the setting.
+
+### HTTPS (optional)
+
+The default is plain HTTP, which works on a local network. To serve HTTPS directly, give
+Kestrel a certificate and set the cookie flag:
 
 ```text
-Data__DatabasePath=/var/lib/musicsync/musicsync.db
-Library__Root=/music                # default: tracks/ at the repository root
-Acquisition__LocalSourceDirectory=tracks
-Tools__Ffmpeg=ffmpeg
-Tools__Ffprobe=ffprobe
-Tools__YtDlp=yt-dlp
-Audio__Format=mp3                 # mp3|flac|opus|m4a
-Audio__Quality=0
-Matching__AutoAcceptThreshold=0.80
-Matching__ReviewThreshold=0.50
-Matching__DurationToleranceSeconds=5
-Worker__Concurrency=1
-MusicBrainz__UserAgent=MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)  # default; no MusicBrainz account or key needed
-ListenBrainz__Token=              # optional
-Spotify__ClientId=                # optional
-Spotify__ClientSecret=            # optional
+ASPNETCORE_URLS=https://+:8443
+ASPNETCORE_Kestrel__Certificates__Default__Path=/config/certificate.pfx
+ASPNETCORE_Kestrel__Certificates__Default__Password=<certificate password>
+Auth__SecureCookies=true
 ```
 
-The SQLite database defaults to `data/musicsync.db` under the API content root.
-Set `Data__DatabasePath` to choose another persistent file location; the API
-creates its parent directory when needed.
+Or let TrueNAS or a reverse proxy terminate TLS and keep the container on HTTP.
+The HTTPS settings above have not been tested end to end yet.
 
-The library defaults to `tracks/` at the repository root, the same folder the
-local-file provider reads. `tracks/` and `data/` are git-ignored.
+### First run and sign-in
 
-MusicBrainz needs no account or API key, only the identifying User-Agent above.
-The app refuses to start if `MusicBrainz__UserAgent` is not in the form
-`Name/Version (contact)`, if a threshold is outside 0–1, if `Audio__Format`
-is not `mp3`, or if `Worker__Concurrency` is not `1`.
+Until the first account exists, every route except `/api/health`, `/api/auth/status`,
+and `/api/auth/setup` returns `403`. Open the app and create the account. The username
+is 3 to 50 characters (letters, digits, `.`, `-`, `_`). The password is 12 to 256
+characters. Setup works only once.
+
+- The password is stored as a salted PBKDF2 hash (ASP.NET `PasswordHasher`). It cannot be read back from the database, so it is not stored in reversible form.
+- The session is an `HttpOnly`, `SameSite=Strict` cookie, valid for `Auth__SessionHours`.
+- Endpoints: `GET /api/auth/status`, `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/password`.
+
+Known limits: login attempts are not rate-limited yet, logout and password change do not
+revoke a session that was copied elsewhere before it expired, and the ListenBrainz and
+Spotify secrets are read from environment variables, not stored in the database.
 
 The API applies pending EF Core migrations on startup. New schema changes should
 be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use

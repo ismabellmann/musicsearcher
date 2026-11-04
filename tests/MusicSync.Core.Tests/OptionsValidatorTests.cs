@@ -81,4 +81,18 @@ public class OptionsValidatorTests
     {
         Assert.Contains(Validate(concurrency: concurrency), error => error.Contains("Worker:Concurrency", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(720, true)]
+    [InlineData(721, false)]
+    public void SessionHours_MustBeBetween1And720(int hours, bool valid)
+    {
+        var errors = MusicSyncOptionsValidator.Validate(
+            new MusicBrainzOptions(), new MatchingOptions(), new AudioOptions(), new WorkerOptions(),
+            new AuthOptions { SessionHours = hours });
+
+        Assert.Equal(valid, errors.All(error => !error.Contains("SessionHours", StringComparison.Ordinal)));
+    }
 }

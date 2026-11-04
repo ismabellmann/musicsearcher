@@ -15,7 +15,8 @@ public static class MusicSyncOptionsValidator
         MusicBrainzOptions musicBrainz,
         MatchingOptions matching,
         AudioOptions audio,
-        WorkerOptions worker)
+        WorkerOptions worker,
+        AuthOptions? auth = null)
     {
         var errors = new List<string>();
 
@@ -49,6 +50,9 @@ public static class MusicSyncOptionsValidator
 
         if (worker.RetryBaseDelaySeconds < 0)
             errors.Add("Worker:RetryBaseDelaySeconds cannot be negative.");
+
+        if (auth is not null && (auth.SessionHours < 1 || auth.SessionHours > 720))
+            errors.Add("Auth:SessionHours must be between 1 and 720.");
 
         return errors;
     }

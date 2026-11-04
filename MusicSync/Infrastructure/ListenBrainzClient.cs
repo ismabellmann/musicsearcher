@@ -30,7 +30,7 @@ public class ListenBrainzClient : IPopularityProvider
     {
         _httpClient = httpClient;
         _logger = logger;
-        _userToken = configuration?.GetValue<string>("ListenBrainz__Token");
+        _userToken = configuration?["ListenBrainz:Token"];
 
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
 

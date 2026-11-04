@@ -56,3 +56,12 @@ public sealed class WorkerOptions
     /// <summary>Base backoff in seconds; retry n waits base x 2^(n-1), capped at 10 minutes.</summary>
     public int RetryBaseDelaySeconds { get; set; } = 30;
 }
+
+public sealed class AuthOptions
+{
+    /// <summary>When true the session cookie is always sent with the Secure flag. Leave false for plain HTTP.</summary>
+    public bool SecureCookies { get; set; } = false;
+
+    /// <summary>Session lifetime in hours (1 to 720).</summary>
+    public int SessionHours { get; set; } = 168;
+}

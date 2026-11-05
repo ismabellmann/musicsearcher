@@ -26,4 +26,9 @@ public record ScoreResult
     /// Gets the reason for the scoring decision.
     /// </summary>
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets whether the target artist was found in the candidate's artist (or title, when no artist is given).
+    /// </summary>
+    public bool ArtistMatched { get; init; }
 }

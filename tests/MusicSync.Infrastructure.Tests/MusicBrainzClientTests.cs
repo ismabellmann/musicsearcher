@@ -72,6 +72,43 @@ public sealed class MusicBrainzClientTests
     }
 
     [Fact]
+    public async Task SearchTracksAsync_MapsReleaseGroupAndYearFromSearchReleaseShape()
+    {
+        const string json = """
+        {
+          "recordings": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "Example Song",
+              "artist-credit": [
+                { "artist": { "id": "22222222-2222-2222-2222-222222222222", "name": "Artist One" } }
+              ],
+              "releases": [
+                {
+                  "title": "Example Album",
+                  "date": "2020-06-01",
+                  "release-group": {
+                    "id": "55555555-5555-5555-5555-555555555555",
+                    "title": "Example Album",
+                    "first-release-date": "2019-03-04"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var client = CreateClient(json);
+
+        var track = Assert.Single(await client.SearchTracksAsync("Example Song", CancellationToken.None));
+
+        Assert.Equal("Example Album", track.AlbumTitle);
+        Assert.Equal(Guid.Parse("55555555-5555-5555-5555-555555555555"), track.ReleaseGroupMbid);
+        Assert.Equal(2019, track.Year);
+    }
+
+    [Fact]
     public async Task LookupByIsrcAsync_ReturnsNullWhenNoRecordingsExist()
     {
         var client = CreateClient("{ \"recordings\": [] }");

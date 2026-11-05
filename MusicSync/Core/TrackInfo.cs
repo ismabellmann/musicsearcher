@@ -36,6 +36,12 @@ public record TrackInfo
     /// </summary>
     public string? AlbumTitle { get; init; }
 
+    /// <summary>Gets or sets the MusicBrainz release group ID, used for cover art.</summary>
+    public Guid? ReleaseGroupMbid { get; init; }
+
+    /// <summary>Gets or sets the release year, if known.</summary>
+    public int? Year { get; init; }
+
     /// <summary>Gets or sets the track number on the album.</summary>
     public int? TrackNumber { get; init; }
 

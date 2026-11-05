@@ -17,8 +17,23 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls(builder.Configuration["ASPNETCORE_URLS"] ?? "http://localhost:5000");
 
+// Development keeps its SQLite database and data-protection keys in a repository-root
+// config folder. Production deployments must pass persistent paths explicitly, usually
+// Config__Dir=/config and Data__DatabasePath=/config/musicsync.db in the container.
+var configDirectory = Path.GetFullPath(
+    builder.Configuration["Config:Dir"]
+        ?? (builder.Environment.IsDevelopment()
+            ? Path.Combine(builder.Environment.ContentRootPath, "..", "config")
+            : Path.Combine(builder.Environment.ContentRootPath, "data", "config")),
+    builder.Environment.ContentRootPath);
+Directory.CreateDirectory(configDirectory);
+
 var databasePath = builder.Configuration["Data:DatabasePath"]
-    ?? Path.Combine(builder.Environment.ContentRootPath, "data", "musicsync.db");
+    ?? Path.Combine(
+        builder.Environment.IsDevelopment()
+            ? configDirectory
+            : Path.Combine(builder.Environment.ContentRootPath, "data"),
+        "musicsync.db");
 databasePath = Path.GetFullPath(databasePath, builder.Environment.ContentRootPath);
 var databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
 if (!string.IsNullOrWhiteSpace(databaseDirectory))
@@ -52,12 +67,20 @@ var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingO
 var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
 
 var authOptions = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
-var configurationErrors = MusicSyncOptionsValidator.Validate(musicBrainzOptions, matchingOptions, audioOptions, workerOptions, authOptions);
+var coverArtOptions = builder.Configuration.GetSection("CoverArt").Get<CoverArtOptions>() ?? new CoverArtOptions();
+var configurationErrors = MusicSyncOptionsValidator.Validate(
+    musicBrainzOptions, matchingOptions, audioOptions, workerOptions, authOptions, coverArtOptions);
 if (configurationErrors.Count > 0)
     throw new InvalidOperationException("Invalid configuration: " + string.Join(" ", configurationErrors));
 
 builder.Services.AddSingleton(musicBrainzOptions);
 builder.Services.AddSingleton(new MusicBrainzRequestGate());
+builder.Services.AddSingleton(coverArtOptions);
+builder.Services.AddSingleton<ITagWriter, TagLibTagWriter>();
+builder.Services.AddSingleton<ICoverArtProvider>(serviceProvider => new CoverArtArchiveClient(
+    coverArtOptions,
+    musicBrainzOptions.UserAgent,
+    serviceProvider.GetRequiredService<ILogger<CoverArtArchiveClient>>()));
 builder.Services.AddSingleton(matchingOptions);
 builder.Services.AddSingleton(workerOptions);
 builder.Services.AddSingleton<IMatchScorer>(_ => new TrackScorer(
@@ -68,9 +91,11 @@ builder.Services.AddSingleton<IAcquisitionProvider, DeterministicAcquisitionProv
 builder.Services.AddSingleton<IAcquisitionProvider>(serviceProvider => new LocalFileAcquisitionProvider(
     acquisitionOptions.LocalSourceDirectory,
     serviceProvider.GetRequiredService<FfmpegAudioTranscoder>()));
-builder.Services.AddSingleton<IAcquisitionProvider>(_ => new YtDlpAcquisitionProvider(
+var ytDlpProvider = new YtDlpAcquisitionProvider(
     toolOptions,
-    Path.Combine(libraryOptions.StagingDirectory, "downloads")));
+    Path.Combine(libraryOptions.StagingDirectory, "downloads"));
+builder.Services.AddSingleton<IAcquisitionProvider>(ytDlpProvider);
+builder.Services.AddSingleton<IVideoSearchProvider>(ytDlpProvider);
 builder.Services.AddSingleton<Worker>();
 builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<Worker>());
 
@@ -97,15 +122,11 @@ builder.Services.AddTransient<IPlaylistSource>(serviceProvider =>
     return new SpotifyPlaylistSource(httpClientFactory.CreateClient("Spotify"), logger, clientId, clientSecret);
 });
 
-var configDirectory = Path.GetFullPath(
-    builder.Configuration["Config:Dir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data", "config"),
-    builder.Environment.ContentRootPath);
-Directory.CreateDirectory(configDirectory);
-
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDirectory, "keys")));
 
 builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

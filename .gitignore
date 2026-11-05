@@ -60,3 +60,7 @@ nunit-*.xml
 data/
 library/
 tracks/
+
+# Development config folder: database and data-protection keys
+config/*
+!config/.gitkeep

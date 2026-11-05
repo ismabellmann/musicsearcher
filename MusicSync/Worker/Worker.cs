@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 
 namespace MusicSync.Worker;
@@ -24,6 +25,8 @@ public sealed class Worker : BackgroundService
     private readonly IMatchScorer _matchScorer;
     private readonly LibraryPathResolver _pathResolver;
     private readonly FfmpegAudioTranscoder _transcoder;
+    private readonly ITagWriter _tagWriter;
+    private readonly ICoverArtProvider _coverArt;
     private readonly LibraryOptions _library;
     private readonly RetryPolicy _retryPolicy;
 
@@ -34,6 +37,8 @@ public sealed class Worker : BackgroundService
         IMatchScorer matchScorer,
         LibraryPathResolver pathResolver,
         FfmpegAudioTranscoder transcoder,
+        ITagWriter tagWriter,
+        ICoverArtProvider coverArt,
         LibraryOptions library,
         WorkerOptions? workerOptions = null)
     {
@@ -46,6 +51,8 @@ public sealed class Worker : BackgroundService
         _matchScorer = matchScorer;
         _pathResolver = pathResolver;
         _transcoder = transcoder;
+        _tagWriter = tagWriter;
+        _coverArt = coverArt;
         _library = library;
     }
 
@@ -304,6 +311,9 @@ public sealed class Worker : BackgroundService
 
             stagedMp3 = Path.Combine(stagingDirectory, $"{job.Id}.mp3");
             await _transcoder.TranscodeToMp3Async(stagedSource, stagedMp3, trackInfo, ct);
+
+            var coverArt = await _coverArt.GetFrontCoverAsync(trackInfo.ReleaseGroupMbid ?? Guid.Empty, ct);
+            await _tagWriter.WriteAsync(stagedMp3, trackInfo, coverArt, ct);
 
             var target = _pathResolver.ResolveWithinRoot(libraryRoot, trackInfo, asSingle: true, ".mp3");
             if (File.Exists(target))

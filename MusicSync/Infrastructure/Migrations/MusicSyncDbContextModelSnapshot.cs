@@ -196,6 +196,132 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("LibraryFiles");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.LibraryImport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AlbumTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArtistName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("IdentifiedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RelativePath")
+                        .IsUnique();
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("LibraryImports");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.LibraryImportCandidate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AlbumTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArtistsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Isrc")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LibraryImportId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RecordingMbid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReleaseGroupMbid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<float>("Score")
+                        .HasColumnType("real");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("Year")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LibraryImportId", "Rank")
+                        .IsUnique();
+
+                    b.ToTable("LibraryImportCandidates");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.Setting", b =>
                 {
                     b.Property<string>("Key")
@@ -237,10 +363,20 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Property<Guid>("RecordingMbid")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ReleaseGroupMbid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("Year")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -300,6 +436,17 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Navigation("DownloadJob");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.LibraryImportCandidate", b =>
+                {
+                    b.HasOne("MusicSync.Infrastructure.LibraryImport", "LibraryImport")
+                        .WithMany("Candidates")
+                        .HasForeignKey("LibraryImportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LibraryImport");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.TrackArtist", b =>
                 {
                     b.HasOne("MusicSync.Infrastructure.Artist", "Artist")
@@ -320,6 +467,11 @@ namespace MusicSync.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("MusicSync.Infrastructure.DownloadJob", b =>
+                {
+                    b.Navigation("Candidates");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.LibraryImport", b =>
                 {
                     b.Navigation("Candidates");
                 });

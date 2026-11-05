@@ -16,7 +16,8 @@ public static class MusicSyncOptionsValidator
         MatchingOptions matching,
         AudioOptions audio,
         WorkerOptions worker,
-        AuthOptions? auth = null)
+        AuthOptions? auth = null,
+        CoverArtOptions? coverArt = null)
     {
         var errors = new List<string>();
 
@@ -53,6 +54,12 @@ public static class MusicSyncOptionsValidator
 
         if (auth is not null && (auth.SessionHours < 1 || auth.SessionHours > 720))
             errors.Add("Auth:SessionHours must be between 1 and 720.");
+
+        if (coverArt is not null && (coverArt.MaxBytes < 1024 || coverArt.MaxBytes > 20_000_000))
+            errors.Add("CoverArt:MaxBytes must be between 1024 and 20000000.");
+
+        if (coverArt is not null && (coverArt.TimeoutSeconds < 1 || coverArt.TimeoutSeconds > 120))
+            errors.Add("CoverArt:TimeoutSeconds must be between 1 and 120.");
 
         return errors;
     }

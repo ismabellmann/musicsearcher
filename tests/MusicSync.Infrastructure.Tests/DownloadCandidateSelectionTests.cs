@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using MusicSync.Api.Controllers;
 using MusicSync.Api.Models;
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 using MusicSync.Worker;
 using Xunit;
@@ -37,6 +38,8 @@ public sealed class DownloadCandidateSelectionTests : IDisposable
         services.AddDbContext<MusicSyncDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton(new LibraryOptions { Root = Path.Combine(_root, "library"), StagingDirectory = Path.Combine(_root, "staging") });
         services.AddSingleton(new FfmpegAudioTranscoder(new ToolOptions(), new AudioOptions()));
+        services.AddSingleton<ITagWriter, TagLibTagWriter>();
+        services.AddSingleton<ICoverArtProvider, NoCoverArtProvider>();
         services.AddSingleton<LibraryPathResolver>();
         services.AddSingleton<IMatchScorer, TrackScorer>();
         services.AddSingleton<IAcquisitionProvider, RankedCandidateProvider>();

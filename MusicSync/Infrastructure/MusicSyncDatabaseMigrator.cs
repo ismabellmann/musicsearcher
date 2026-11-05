@@ -10,12 +10,13 @@ public static class MusicSyncDatabaseMigrator
     private const string HistoryTable = "__EFMigrationsHistory";
 
     // Tables created by migrations after InitialCreate. Legacy baselining checks only the InitialCreate schema.
-    private static readonly string[] MigrationOnlyTables = { "TrackArtists", "DownloadJobCandidates" };
+    private static readonly string[] MigrationOnlyTables = { "TrackArtists", "DownloadJobCandidates", "LibraryImports", "LibraryImportCandidates" };
 
     // Columns added after InitialCreate, keyed by table.
     private static readonly Dictionary<string, string[]> MigrationOnlyColumns = new(StringComparer.Ordinal)
     {
-        ["DownloadJobs"] = new[] { "NextAttemptAt", "AutomaticRetries" }
+        ["DownloadJobs"] = new[] { "NextAttemptAt", "AutomaticRetries" },
+        ["Tracks"] = new[] { "SourceUrl", "ReleaseGroupMbid", "Year" }
     };
 
     public static async Task MigrateAsync(MusicSyncDbContext db, CancellationToken ct = default)

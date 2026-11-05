@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using MusicSync.Api.Controllers;
 using MusicSync.Api.Models;
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 using MusicSync.Worker;
 using Xunit;
@@ -65,7 +66,7 @@ public sealed class DownloadJobPersistenceTests
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
         Assert.True(await db.Database.CanConnectAsync());
-        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(9, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Tracks.ToListAsync());
     }
 
@@ -88,12 +89,18 @@ public sealed class DownloadJobPersistenceTests
             ArtistName = "Legacy Artist",
             DurationMs = 120000
         };
-        db.Tracks.Add(track);
-        await db.SaveChangesAsync();
+        // Insert with the InitialCreate columns only; the current entity has later columns
+        // (SourceUrl, ReleaseGroupMbid, Year) that this legacy schema does not have yet.
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO \"Tracks\" (\"RecordingMbid\", \"Title\", \"ArtistName\", \"DurationMs\") VALUES ({0}, {1}, {2}, {3});",
+            track.RecordingMbid.ToString(),
+            track.Title,
+            track.ArtistName,
+            track.DurationMs);
 
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
-        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(9, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var persistedTrack = await db.Tracks.SingleAsync();
         Assert.Equal(track.RecordingMbid, persistedTrack.RecordingMbid);
         Assert.Equal("Legacy Track", persistedTrack.Title);
@@ -408,6 +415,8 @@ public sealed class DownloadJobPersistenceTests
         var stagingDirectory = Path.Combine(Path.GetTempPath(), "musicsync-worker-test-" + Guid.NewGuid().ToString("N"));
         services.AddSingleton(new LibraryOptions { Root = Path.Combine(stagingDirectory, "library"), StagingDirectory = stagingDirectory });
         services.AddSingleton(new FfmpegAudioTranscoder(new ToolOptions(), new AudioOptions()));
+        services.AddSingleton<ITagWriter, TagLibTagWriter>();
+        services.AddSingleton<ICoverArtProvider, NoCoverArtProvider>();
         services.AddSingleton<LibraryPathResolver>();
         services.AddSingleton<MusicSync.Worker.Worker>();
 

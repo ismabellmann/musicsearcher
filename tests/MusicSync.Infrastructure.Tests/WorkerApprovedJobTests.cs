@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 using MusicSync.Worker;
 using Xunit;
@@ -26,6 +27,7 @@ public sealed class WorkerApprovedJobTests : IDisposable
         var stagingDirectory = Path.Combine(_root, "staging");
         var downloadWorkRoot = Path.Combine(_root, "downloads");
         Directory.CreateDirectory(_root);
+        var releaseGroupMbid = Guid.NewGuid();
         var tone = Path.Combine(_root, "tone.wav");
         await RunToolAsync("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-f", "lavfi", "-i", "sine=frequency=330:duration=2", tone);
@@ -38,6 +40,9 @@ public sealed class WorkerApprovedJobTests : IDisposable
         services.AddDbContext<MusicSyncDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton(new LibraryOptions { Root = libraryRoot, StagingDirectory = stagingDirectory });
         services.AddSingleton(new FfmpegAudioTranscoder(new ToolOptions(), new AudioOptions()));
+        services.AddSingleton<ITagWriter, TagLibTagWriter>();
+        var coverArt = new FakeCoverArtProvider();
+        services.AddSingleton<ICoverArtProvider>(coverArt);
         services.AddSingleton<LibraryPathResolver>();
         services.AddSingleton<IMatchScorer, TrackScorer>();
         services.AddSingleton<IAcquisitionProvider>(new FakeFileProvider(tone, downloadWorkRoot));
@@ -55,6 +60,9 @@ public sealed class WorkerApprovedJobTests : IDisposable
                 RecordingMbid = Guid.NewGuid(),
                 Title = "Approved Song",
                 ArtistName = "Test Artist",
+                AlbumTitle = "Approved Album",
+                ReleaseGroupMbid = releaseGroupMbid,
+                Year = 2024,
                 DurationMs = 2000
             };
             db.Tracks.Add(track);
@@ -105,12 +113,40 @@ public sealed class WorkerApprovedJobTests : IDisposable
                 Assert.Equal(64, libraryFile.Sha256.Length);
             }
 
+            using (var file = TagLib.File.Create(persisted.OutputPath!))
+            {
+                Assert.Equal("Approved Song", file.Tag.Title);
+                Assert.Equal(new[] { "Test Artist" }, file.Tag.Performers);
+                Assert.Equal("Approved Album", file.Tag.Album);
+                Assert.Equal(2024u, file.Tag.Year);
+                Assert.Equal(releaseGroupMbid.ToString(), file.Tag.MusicBrainzReleaseGroupId);
+                var picture = Assert.Single(file.Tag.Pictures);
+                Assert.Equal(TagLib.PictureType.FrontCover, picture.Type);
+                Assert.Equal("image/png", picture.MimeType);
+                Assert.Equal(FakeCoverArtProvider.CoverBytes, picture.Data.Data);
+            }
+
+            Assert.Equal(releaseGroupMbid, coverArt.RequestedMbid);
             Assert.Empty(Directory.GetFiles(stagingDirectory));
             Assert.False(Directory.Exists(downloadWorkRoot) && Directory.GetDirectories(downloadWorkRoot).Length > 0);
         }
         finally
         {
             await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class FakeCoverArtProvider : ICoverArtProvider
+    {
+        public static readonly byte[] CoverBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l1P9WQAAAABJRU5ErkJggg==");
+
+        public Guid? RequestedMbid { get; private set; }
+
+        public Task<byte[]?> GetFrontCoverAsync(Guid releaseGroupMbid, CancellationToken ct)
+        {
+            RequestedMbid = releaseGroupMbid;
+            return Task.FromResult<byte[]?>(CoverBytes);
         }
     }
 

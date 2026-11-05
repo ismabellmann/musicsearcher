@@ -5,6 +5,15 @@ public sealed class LibraryOptions
     public string Root { get; set; } = string.Empty;
 
     public string StagingDirectory { get; set; } = string.Empty;
+
+    /// <summary>Search YouTube when MusicBrainz has no candidate matching the file's artist.</summary>
+    public bool YouTubeFallback { get; set; } = true;
+
+    /// <summary>How many YouTube results to compare per file.</summary>
+    public int YouTubeMaxCandidates { get; set; } = 5;
+
+    /// <summary>Embed a Cover Art Archive front cover into files accepted during library import.</summary>
+    public bool EmbedCoverOnImport { get; set; } = true;
 }
 
 public sealed class AudioOptions
@@ -21,6 +30,18 @@ public sealed class ToolOptions
     public string Ffprobe { get; set; } = "ffprobe";
 
     public string YtDlp { get; set; } = "yt-dlp";
+}
+
+public sealed class CoverArtOptions
+{
+    /// <summary>Fetch cover art from the Cover Art Archive when tagging a downloaded track.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Largest cover file accepted, in bytes.</summary>
+    public int MaxBytes { get; set; } = 5_000_000;
+
+    /// <summary>Cover Art Archive request timeout, in seconds.</summary>
+    public int TimeoutSeconds { get; set; } = 15;
 }
 
 public sealed class AcquisitionOptions

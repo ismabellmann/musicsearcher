@@ -300,10 +300,15 @@ public class MusicBrainzClient : IMetadataProvider
     private static TrackInfo ParseTrack(JsonElement recording, JsonElement? releaseTrack = null)
     {
         var artists = ReadArtistCredits(recording);
-        var release = recording.TryGetProperty("release-list", out var releases)
-            ? releases.EnumerateArray().FirstOrDefault()
-            : default;
+        var release = ReadFirstRelease(recording);
+        var releaseGroup = release.ValueKind == JsonValueKind.Object
+            && release.TryGetProperty("release-group", out var group)
+            && group.ValueKind == JsonValueKind.Object
+                ? group
+                : default;
         var trackNumber = releaseTrack.HasValue ? ReadInt(releaseTrack.Value, "position") : null;
+        var releaseGroupMbid = releaseGroup.ValueKind == JsonValueKind.Object ? ReadGuid(releaseGroup, "id") : Guid.Empty;
+        var year = releaseGroup.ValueKind == JsonValueKind.Object ? ReadYear(releaseGroup) : null;
 
         return new TrackInfo
         {
@@ -313,9 +318,30 @@ public class MusicBrainzClient : IMetadataProvider
             ArtistName = artists.FirstOrDefault()?.Name,
             Artists = artists,
             AlbumTitle = release.ValueKind == JsonValueKind.Object ? ReadString(release, "title") : null,
+            ReleaseGroupMbid = releaseGroupMbid == Guid.Empty ? null : releaseGroupMbid,
+            Year = year ?? ReadYear(release),
             TrackNumber = trackNumber,
             DurationMs = ReadInt(recording, "length") ?? 0
         };
+    }
+
+    /// <summary>
+    /// Search responses use "releases"; lookup responses use "release-list". Both carry the
+    /// release title, date, and release-group ID.
+    /// </summary>
+    private static JsonElement ReadFirstRelease(JsonElement recording)
+    {
+        foreach (var propertyName in new[] { "release-list", "releases" })
+        {
+            if (!recording.TryGetProperty(propertyName, out var releases))
+                continue;
+
+            var first = releases.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind == JsonValueKind.Object)
+                return first;
+        }
+
+        return default;
     }
 
     private static TrackInfo ParseAlbumSearchResult(JsonElement release)
@@ -392,6 +418,9 @@ public class MusicBrainzClient : IMetadataProvider
 
     private static int? ReadYear(JsonElement element)
     {
+        if (element.ValueKind != JsonValueKind.Object)
+            return null;
+
         var date = ReadString(element, "first-release-date") ?? ReadString(element, "date");
         return date is not null && int.TryParse(date[..Math.Min(4, date.Length)], out var year) ? year : null;
     }

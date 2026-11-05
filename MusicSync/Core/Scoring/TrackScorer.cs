@@ -54,7 +54,7 @@ public class TrackScorer : IMatchScorer
             reasons.Append($"title:{titleScore:F2}; ");
 
         // 3. Artist name similarity (up to 0.2 points)
-        var artistScore = CalculateArtistScore(target.ArtistName, candidate.Title);
+        var artistScore = CalculateArtistScore(target.ArtistName, candidate.ArtistName ?? candidate.Title);
         score += artistScore;
         if (artistScore > 0)
             reasons.Append($"artist:{artistScore:F2}; ");
@@ -83,7 +83,8 @@ public class TrackScorer : IMatchScorer
             Score = score,
             AutoAccept = autoAccept,
             NeedsReview = needsReview,
-            Reason = reasons.ToString().TrimEnd(';', ' ')
+            Reason = reasons.ToString().TrimEnd(';', ' '),
+            ArtistMatched = artistScore > 0
         };
     }
 

@@ -1,4 +1,5 @@
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 
 namespace MusicSync.Worker;
@@ -8,7 +9,7 @@ namespace MusicSync.Worker;
 /// into a temporary work directory. Every argument is passed through ArgumentList; the video URL
 /// is validated and placed after "--" so it cannot be read as an option.
 /// </summary>
-public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
+public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider, IVideoSearchProvider
 {
     private readonly ToolOptions _tools;
     private readonly string _workRoot;
@@ -48,6 +49,22 @@ public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider
                 Title = video.Title,
                 SourceUrl = YtDlpSearchParser.ToWatchUrl(video.VideoId),
                 DurationMs = video.DurationMs
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Search-only view used by the library import. The raw video title is split into artist and
+    /// title so the scorer compares them separately. Nothing is downloaded.
+    /// </summary>
+    public async Task<IReadOnlyList<SourceCandidate>> SearchAsync(TrackInfo target, int max, CancellationToken ct)
+    {
+        var candidates = await FindCandidatesAsync(target, max, ct);
+        return candidates
+            .Select(candidate =>
+            {
+                var parsed = VideoTitleParser.Parse(candidate.Title);
+                return candidate with { Title = parsed.Title, ArtistName = parsed.Artist };
             })
             .ToList();
     }

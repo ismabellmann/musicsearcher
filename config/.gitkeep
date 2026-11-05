@@ -1,0 +1,8 @@
+# Development runtime data
+
+This folder is used automatically when the API runs in the Development environment
+(`dotnet run` uses the `MusicSync.Api` launch profile). It holds the local SQLite
+database and the data-protection keys.
+
+Its contents are ignored by git. In production, set `Config__Dir` and
+`Data__DatabasePath` to persistent paths instead.

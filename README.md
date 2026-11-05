@@ -107,9 +107,16 @@ Relative paths resolve against the API content root. Defaults are shown below.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ASPNETCORE_URLS` | `http://localhost:5000` | Address and port to listen on. Use `http://+:8080` inside a container. |
-| `Data__DatabasePath` | `data/musicsync.db` | SQLite database file. Put it on persistent storage. |
-| `Config__Dir` | `data/config` | Persistent folder for the cookie-protection keys. Keep it across restarts, or every session is signed out. |
+| `ASPNETCORE_URLS` | `http://localhost:5000` | Address and port to listen on. The container image uses `http://+:28080`, so it does not clash with other services on the host. |
+| `Data__DatabasePath` | `data/musicsync.db` (Production)<br>`config/musicsync.db` (Development) | SQLite database file. Put it on persistent storage. |
+| `Config__Dir` | `data/config` (Production)<br>`config` (Development) | Persistent folder for the cookie-protection keys. Keep it across restarts, or every session is signed out. |
+
+For local development, `dotnet run --project MusicSync.Api` uses the `MusicSync.Api`
+launch profile, which sets `ASPNETCORE_ENVIRONMENT=Development`. In that environment the
+database and keys default to the `config/` folder at the repository root; its contents are
+ignored by git. This is a development convenience only. In production, set
+`Config__Dir` and `Data__DatabasePath` explicitly to persistent paths, for example
+`/config` and `/config/musicsync.db` in the container.
 
 ### Sign-in
 
@@ -124,6 +131,9 @@ Relative paths resolve against the API content root. Defaults are shown below.
 |---|---|---|
 | `Library__Root` | `tracks/` at the repository root | Folder where finished MP3 files are stored. In Docker, use `/music`. |
 | `Library__StagingDirectory` | `data/staging` | Temporary work folder for downloads. |
+| `Library__YouTubeFallback` | `true` | Searches YouTube when MusicBrainz has no candidate matching the file's artist during library import. Results are only listed, never downloaded. |
+| `Library__YouTubeMaxCandidates` | `5` | YouTube results compared per file during library import. |
+| `Library__EmbedCoverOnImport` | `true` | Embeds the release-group front cover into accepted library files. Existing text tags are not changed. |
 | `Acquisition__LocalSourceDirectory` | `tracks/` | Folder read by the local-file provider. |
 | `Audio__Format` | `mp3` | Output format. Only `mp3` is supported now. |
 | `Audio__Quality` | `0` | ffmpeg quality value for MP3 (0 is the highest quality). |
@@ -139,6 +149,9 @@ Relative paths resolve against the API content root. Defaults are shown below.
 | `ListenBrainz__Token` | empty | Optional ListenBrainz token. It is read but not yet sent with any request. |
 | `Spotify__ClientId` | empty | Optional Spotify app client ID, used by the current playlist client. |
 | `Spotify__ClientSecret` | empty | Optional Spotify app client secret, used by the current playlist client. |
+| `CoverArt__Enabled` | `true` | Fetch the release-group front cover from the Cover Art Archive when tagging a newly acquired track. |
+| `CoverArt__MaxBytes` | `5000000` | Largest cover image accepted, in bytes. |
+| `CoverArt__TimeoutSeconds` | `15` | Cover Art Archive request timeout, in seconds. |
 
 ### Matching and worker
 
@@ -201,6 +214,45 @@ the database only if its tables and columns match the known schema exactly;
 data is retained. An unknown or partially changed schema causes startup to fail
 with an actionable error instead of attempting a destructive recreation.
 
+## Library import
+
+Existing files in the library folder can be identified without downloading anything.
+The folder layout tells the app the artist and title: `Artist/Title.mp3` or
+`Artist/Album/NN - Title.mp3`. Other layouts are reported as unrecognized.
+
+1. `POST /api/library/scan` lists the new files as `Pending`. Files already known are skipped.
+2. `POST /api/library/imports/identify` searches MusicBrainz for `Title - Artist` and stores up
+   to 10 candidates in total. If no candidate matches the file's artist, it also searches YouTube with
+   yt-dlp (`--skip-download`, search results only) and adds up to `Library__YouTubeMaxCandidates`
+   videos. Each candidate says whether it came from `musicbrainz` or `youtube` and includes its
+   `sourceUrl`. Items become `Identified` when a candidate is above the review threshold and
+   matches the artist, otherwise `NoMatch`.
+   Pass `{"importIds": [..]}` to choose files; the default is every `Pending` file.
+3. `GET /api/library/imports/{id}` shows the candidates. Choose one with
+   `POST /api/library/imports/{id}/accept` and `{"candidateId": n}`. For a YouTube match, the
+   artist and title are read from the video title (`Artist - Title`); when the title has no
+   separator, the folder values are stored instead. The video URL is saved as the track origin.
+   For a MusicBrainz candidate, the front cover of its release group is fetched from the Cover
+   Art Archive and embedded into the existing file. The rest of the file's tags are left
+   unchanged, and a missing or unreachable cover does not block the import. A recording or video
+   that is already in the library is refused with `409`.
+4. `POST /api/library/imports/{id}/reject` discards a file.
+5. `PUT /api/library/imports/{id}/path` with `{"relativePath": "..."}` changes the stored path.
+   The file is not moved. The new path must stay inside the library and point to an existing file.
+6. `POST /api/library/covers` adds covers to files that were imported before cover embedding was
+   enabled. It only processes `Imported` files whose track has a release-group MBID, embeds the
+   front cover without changing text tags, and refreshes the stored `Sha256`/`SizeBytes`. Pass
+   `{"importIds": [..]}` to target specific imports; the default is every eligible import. The
+   response reports `scanned`, `embedded`, `skipped`, `failed`. A missing cover counts as
+   `skipped`; a missing file or write error counts as `failed` and does not stop the batch.
+
+Limits: the search uses the artist from the folder name, so a wrong folder gives wrong
+candidates. A YouTube-only track gets a stable identifier derived from the video ID instead of
+a real MusicBrainz recording ID. Matching is title, artist and duration only; there is no audio
+fingerprint. Identification runs inside the request, and yt-dlp adds a few seconds per fallback
+file, so send `importIds` in chunks for large libraries. Tags are not read yet; only cover art is
+written back into imported files.
+
 ## API responses
 
 Successful and validation-error responses include an HTTP status, a Spanish
@@ -218,10 +270,15 @@ Successful and validation-error responses include an HTTP status, a Spanish
 ```
 
 Submit a track for acquisition with `POST /api/downloads`, sending its
-MusicBrainz recording ID, title, artist, and duration in milliseconds. The
-hosted worker reads queued jobs from SQLite, selects and scores a candidate,
-then persists its source and score with status `ReadyForTagging`. Actual audio
-download and TagLibSharp tagging are intentionally outside this pipeline slice.
+MusicBrainz recording ID, title, artist, album, release-group ID, year, and
+duration in milliseconds. The hosted worker reads queued jobs from SQLite,
+selects and scores a candidate, then either accepts it automatically or parks
+the job in `NeedsReview`. After approval it downloads the source, transcodes it
+to MP3 with ffmpeg, writes ID3 tags and an optional Cover Art Archive front
+cover with TagLibSharp, stores the file under `Library__Root`, records a
+`LibraryFile`, and marks the job `Done`. A missing cover or an unreachable
+archive never fails the job. Tags are written only for newly acquired files;
+files already in the library are not rewritten.
 
 Queue management endpoints:
 
@@ -229,7 +286,7 @@ Queue management endpoints:
 |---|---|---|
 | `GET` | `/api/downloads?status=Queued&page=1&pageSize=50` | List jobs; status is optional, page size is limited to 100. Queued results are FIFO and include queue positions. |
 | `GET` | `/api/downloads/{id}` | Get a job and its current status. |
-| `POST` | `/api/downloads/{id}/approve` | Approve a `NeedsReview` candidate; records status `Approved` but does not start a download. |
+| `POST` | `/api/downloads/{id}/approve` | Approve a `NeedsReview` candidate; the worker then downloads, tags, and stores it. |
 | `POST` | `/api/downloads/{id}/cancel` | Cancel a queued or review-pending job. Active or terminal jobs return `409 Conflict`; active provider work is not interrupted. |
 | `POST` | `/api/downloads/{id}/retry` | Requeue a failed job, preserving its attempt count and clearing its prior error and candidate. |
 

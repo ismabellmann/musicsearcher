@@ -21,6 +21,8 @@ public static class TrackCatalog
             Title = info.Title,
             ArtistName = credits.Count > 0 ? string.Join(" & ", credits.Select(credit => credit.Name)) : string.Empty,
             AlbumTitle = info.AlbumTitle,
+            ReleaseGroupMbid = info.ReleaseGroupMbid,
+            Year = info.Year,
             Isrc = info.Isrc,
             DurationMs = info.DurationMs
         };
@@ -50,6 +52,8 @@ public static class TrackCatalog
         Title = track.Title,
         ArtistName = track.ArtistName,
         AlbumTitle = track.AlbumTitle,
+        ReleaseGroupMbid = track.ReleaseGroupMbid,
+        Year = track.Year,
         Isrc = track.Isrc,
         DurationMs = track.DurationMs,
         Artists = track.TrackArtists

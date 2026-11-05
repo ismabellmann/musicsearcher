@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MusicSync.Core;
+using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 using MusicSync.Worker;
 using Xunit;
@@ -101,6 +102,8 @@ public sealed class WorkerRetryTests : IDisposable
         services.AddSingleton(new LibraryOptions { Root = Path.Combine(_root, "library"), StagingDirectory = Path.Combine(_root, "staging") });
         services.AddSingleton(new WorkerOptions { MaxAutomaticRetries = 2, RetryBaseDelaySeconds = 0 });
         services.AddSingleton(new FfmpegAudioTranscoder(new ToolOptions(), new AudioOptions()));
+        services.AddSingleton<ITagWriter, TagLibTagWriter>();
+        services.AddSingleton<ICoverArtProvider, NoCoverArtProvider>();
         services.AddSingleton<LibraryPathResolver>();
         services.AddSingleton<IMatchScorer, TrackScorer>();
         services.AddSingleton<IAcquisitionProvider>(provider);
@@ -174,4 +177,5 @@ public sealed class WorkerRetryTests : IDisposable
         public Task<DownloadedFile> DownloadAsync(SourceCandidate candidate, CancellationToken ct) =>
             throw new NotSupportedException("Retry tests do not download.");
     }
+
 }

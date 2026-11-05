@@ -233,8 +233,9 @@ Scorer gap status:
 - Startup recovery: jobs in `Resolving` or `Searching` return to `Queued`; jobs in `Downloading` or `Tagging` return to `ReadyForTagging`, so the storage stage runs again. Partially written library files are not recovered automatically.
 - `NeedsReview` jobs are parked while the worker continues processing other queued jobs.
 - Registered providers: `deterministic` (default; tests only, it supplies no audio, so a job using it fails at the download step), `local` (audio files directly inside the source folder, default `tracks/`), and `yt-dlp` (YouTube search, selected video downloaded by its ID). The request's `provider` field selects one. yt-dlp is intended for lawful, personally authorized archival use (§3).
-- The accepted candidate is persisted with its score and source, then the job moves to `ReadyForTagging`. The worker then downloads the source into a temporary work directory, transcodes it to MP3 with ffmpeg, fetches the release-group front cover from the Cover Art Archive, writes ID3 tags and the embedded cover with TagLibSharp, moves it into `{Library__Root}/{PrimaryArtist}/{Title}.mp3` (singles layout only; the album layout is not used yet), writes a `LibraryFile` row, and marks the job `Done`. An existing target file is kept and the job is marked `Done` with the note `AlreadyExists`. If the database save fails after the move, the moved file is deleted. Approved jobs follow the same path. SSE progress remains future work.
-- Implemented: if the target file already exists, the job is marked `Done` with the note `AlreadyExists` and no file is written. Matching is by path only; matching by MBID through `LibraryFiles` is not implemented yet.
+- The accepted candidate is persisted with its score and source, then the job moves to `ReadyForTagging`. Before searching and again before storage, the worker checks `LibraryFiles` for the track and the resolved target path. If the recording is already stored, the job is marked `Done` with `AlreadyInLibrary` and the existing `OutputPath`; if only the physical target exists, the note is `AlreadyExists`. In both cases the provider is not called. Otherwise the worker downloads the source into a temporary work directory, transcodes it to MP3 with ffmpeg, fetches the release-group front cover from the Cover Art Archive, writes ID3 tags and the embedded cover with TagLibSharp, moves it into `{Library__Root}/{PrimaryArtist}/{Title}.mp3` (singles layout only; the album layout is not used yet), writes a `LibraryFile` row, and marks the job `Done`. The final `File.Exists` check remains as a last safety net. If the database save fails after the move, the moved file is deleted. Approved jobs follow the same path. SSE progress remains future work.
+- `POST /api/downloads` rejects a recording that already has an active job (`Queued`, `Resolving`, `Searching`, `NeedsReview`, `Approved`, `Downloading`, `Tagging`, or `ReadyForTagging`) with `409 Conflict`. A recording that is already stored still returns `202` so the worker can record an `AlreadyInLibrary` job.
+- Import acceptance checks the recording first, then computes the pre-embed SHA-256 and compares it with `LibraryFiles`. A matching hash returns `FileAlreadyInLibrary`, mapped to `409 Conflict`, and the file is left untouched, including no cover embedding. The final hash is recomputed after embedding for the stored row.
 - The intended completed design remains a persisted, resumable queue with transient retries, idempotency, and progress over SSE.
 
 ### 8.6 Library layout
@@ -270,7 +271,7 @@ Endpoints/queries over the local DB: top artists by tracks owned, downloads per 
 | UI polls for activity | No UI or SSE yet; both remain planned. |
 | Spotify playlist support | Playlist parsing/API foundation exists; bulk playlist-to-job import is not implemented. |
 | Tagging pipeline | ffmpeg transcodes to MP3, then TagLibSharp writes title, artists, album, year, track/disc numbers, ISRC, MBIDs, and an optional embedded front cover fetched from the Cover Art Archive. |
-| Library and duplicate detection | Completed files and accepted imports are stored with `LibraryFile` rows; existing download targets are handled as `AlreadyExists` by path, and cover art can be backfilled for imported files. General listing/deletion and MBID/hash/path deduplication beyond the current path check are not implemented yet. |
+| Library and duplicate detection | Completed files and accepted imports are stored with `LibraryFile` rows. Duplicate-safe admission is implemented: active-job MBID conflicts return `409`, stored recordings are marked `AlreadyInLibrary`, physical target conflicts are marked `AlreadyExists`, and import acceptance rejects the same recording or the same SHA-256. Cover art can be backfilled for imported files. General listing/deletion, album layout, and SSE remain unimplemented. |
 | Multi-artist metadata | Artist credits are stored in order in `TrackArtists`. The first artist names the folder and every artist is written to the artist tag. Album layout and per-artist search endpoints are not implemented yet. |
 
 These are roadmap comparisons, not claims that the target behavior is already shipped. The near-term goal is a complete, safe single-track vertical slice before bulk workflows or UI work.
@@ -359,33 +360,40 @@ Progress below reflects the current repository implementation. A passing test/bu
 
 1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, SQLite registration, metadata-client DI, and EF Core migrations are present. The API applies pending migrations at startup and safely baselines a matching legacy `EnsureCreated` SQLite schema. Startup validates configuration (MusicBrainz identity, matching thresholds, audio format, worker concurrency, retry settings). ✅ Implemented - first-run setup, authenticated cookie sessions, health endpoint, and configuration validation are complete. HTTPS/HSTS enforcement remains optional for the current plain-HTTP private deployment; inbound hardening is tracked in §11.
 2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - a shared request gate paces MusicBrainz at one request per second process-wide, 429/503 responses are retried with Retry-After support, and failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Cache correctness (the cache keys currently include timestamps, so entries are never read), ListenBrainz retries, error/response consistency across all endpoints, and broader endpoint tests remain.
-3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, `AlreadyExists` handling, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - MBID/hash duplicate detection, album layout (§8.6), active-work cancellation, and SSE.
+3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - album layout (§8.6), active-work cancellation, and SSE.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
 5. **M5 Playlists and top-N:** Spotify playlist and ListenBrainz top-recording parsing foundations and API endpoints are present. 🚧 In progress - end-to-end playlist track mapping and enqueue/import workflow remain.
-6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows already record downloaded and imported files. Remaining: SSE, general library listing/deletion, and deduplication by MBID/hash/path beyond the current path check.
+6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows record downloaded and imported files, and duplicate admission by recording MBID, SHA-256, and target path is implemented. Remaining: SSE and general library listing/deletion.
 7. **M7 Analytics and packaging:** ⏳ Planned - summary endpoints, Docker image (ffmpeg, yt-dlp, Deno) for the chosen TrueNAS target (port `28080`, `/music` and `/config` volumes, non-root), docs, and CI. Still needs the image-source decision (build on the NAS vs publish to GHCR) and the yt-dlp version policy (pin vs track latest).
 8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
 
 ### Recommended implementation order
 
-1. Complete one single-track pipeline end to end using only an acquisition source the user is authorized to access: scorer correctness, approved-candidate behavior, acquisition, MP3 conversion, tagging, safe library path, duplicate detection, and persisted `LibraryFile`. Everything is implemented except duplicate detection, which is the next slice below.
+1. Complete one single-track pipeline end to end using only an acquisition source the user is authorized to access: scorer correctness, approved-candidate behavior, acquisition, MP3 conversion, tagging, safe library path, duplicate detection, and persisted `LibraryFile`. This vertical slice is implemented, including duplicate-safe admission.
 2. Verify job lifecycle and failure recovery for that vertical slice with integration tests; do not mark a job `Done` until the file and database record are successfully committed.
 3. Add bulk enqueue/import workflows, starting with public Spotify playlists, then album and artist top-N flows.
 4. Add SSE/activity and library list/delete endpoints, followed by the minimal UI that exposes Search, Activity, Library, and Settings.
 5. Prioritize security, configuration, and deployment packaging needed for the chosen target; defer analytics and other secondary features until the core workflow is dependable.
 
-### Current next slice: duplicate-safe library admission (M3/M6)
+### Completed slice: duplicate-safe library admission (M3/M6)
 
-The single-track download path and the existing-library import path are both working. The remaining core risk is admitting the same recording or the same bytes more than once.
+Implemented and covered by tests. Final behavior:
+- `POST /api/downloads` rejects an active job for the same recording with `409 Conflict` and creates no second job. A recording that is already stored still returns `202` so the worker can record an `AlreadyInLibrary` job.
+- The worker checks `LibraryFiles` for the track and the resolved target path before searching and again before storage. It marks the job `Done` with `AlreadyInLibrary` (database record exists) or `AlreadyExists` (physical target exists), sets `OutputPath`, and does not call the provider. The final `File.Exists` check remains as a last safety net.
+- Import acceptance checks the recording first, then the pre-embed SHA-256. A matching hash returns `FileAlreadyInLibrary`, mapped to `409 Conflict`, without modifying the file or embedding a cover. The final hash is recomputed after a successful embedding for the stored row.
+- No schema change was needed. Indexes on `LibraryFiles.TrackId`/`Sha256` remain optional performance work.
 
-Scope:
-1. Before a download is enqueued or starts, check `LibraryFiles`/`Tracks` for the target recording MBID and for the resolved target path. Return a clear conflict (for example `409` with the existing file) or mark the job `Done` with an `AlreadyInLibrary` note instead of downloading again.
-2. Keep the worker-side check as a safety net so a race or a retry cannot create a second `LibraryFile`.
-3. Extend import acceptance with a content-hash check: if the same SHA-256 already exists under another path, refuse the accept with a clear message rather than creating a duplicate.
-4. Add tests for MBID, path, and hash duplicates (API and worker level), then run the full build, Core/Infrastructure tests, and an API smoke test.
-5. Update `README.md` and this file with the final behavior.
+Tests cover active-job conflicts, existing stored recordings, existing target paths, and import hash duplicates (Core 83, Infrastructure 107).
 
-Out of scope for this slice: album layout, SSE, general library listing/deletion, bulk playlist import, Docker packaging, and UI. Docker packaging is the recommended slice after this one.
+### Next slice: Docker packaging (M7)
+
+Package the verified backend for Docker on TrueNAS as a custom app:
+- Listen on port `28080`, mount the music library at `/music` and persistent config/database at `/config`.
+- Run as non-root with ffmpeg, yt-dlp, and Deno in the image.
+- Resolve the image-source choice (build on the NAS vs publish to GHCR) and the yt-dlp version policy (pin vs track latest).
+- Document the required host folders and environment variables (`Config__Dir`, `Data__DatabasePath`, `Library__Root`, and provider/tool paths).
+
+Out of scope until after packaging: album layout, SSE, general library listing/deletion, bulk playlist import, and UI.
 
 ## 15. Open questions (ask the owner before assuming)
 

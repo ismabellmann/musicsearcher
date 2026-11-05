@@ -32,9 +32,9 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
         Directory.CreateDirectory(Path.Combine(_root, "Pold"));
         Directory.CreateDirectory(Path.Combine(_root, "Band", "Album"));
         Directory.CreateDirectory(Path.Combine(_root, "Deep", "Too", "Far"));
-        File.WriteAllText(Path.Combine(_root, "Pold", "Hideout.mp3"), "not real audio");
-        File.WriteAllText(Path.Combine(_root, "Pold", "Unknown Song.mp3"), "not real audio");
-        File.WriteAllText(Path.Combine(_root, "Band", "Album", "03 - Tune.flac"), "not real audio");
+        File.WriteAllText(Path.Combine(_root, "Pold", "Hideout.mp3"), "not real audio hideout");
+        File.WriteAllText(Path.Combine(_root, "Pold", "Unknown Song.mp3"), "not real audio unknown");
+        File.WriteAllText(Path.Combine(_root, "Band", "Album", "03 - Tune.flac"), "not real audio tune");
         File.WriteAllText(Path.Combine(_root, "stray.mp3"), "top level");
         File.WriteAllText(Path.Combine(_root, "Deep", "Too", "Far", "x.mp3"), "too deep");
         File.WriteAllText(Path.Combine(_root, "Pold", "notes.txt"), "not audio");
@@ -245,6 +245,35 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
 
         var sameRecording = await _db.LibraryImportCandidates.FirstAsync(item => item.LibraryImportId == unknown.Id && item.RecordingMbid == HideoutMbid);
         Assert.Equal(AcceptOutcome.RecordingAlreadyInLibrary, await _service.AcceptCandidateAsync(unknown.Id, sameRecording.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Accept_RejectsDuplicateContent_ForAnotherRecording()
+    {
+        await _service.ScanAsync(CancellationToken.None);
+        var hideout = await _db.LibraryImports.SingleAsync(item => item.Title == "Hideout");
+        var unknown = await _db.LibraryImports.SingleAsync(item => item.Title == "Unknown Song");
+        await _service.IdentifyAsync(new[] { hideout.Id, unknown.Id }, CancellationToken.None);
+
+        var hideoutCandidate = await _db.LibraryImportCandidates.SingleAsync(
+            item => item.LibraryImportId == hideout.Id && item.Rank == 1);
+        Assert.Equal(AcceptOutcome.Imported, await _service.AcceptCandidateAsync(hideout.Id, hideoutCandidate.Id, CancellationToken.None));
+        var firstWrites = _tagWriter.CoverWrites;
+
+        var hideoutPath = Path.Combine(_root, "Pold", "Hideout.mp3");
+        var unknownPath = Path.Combine(_root, "Pold", "Unknown Song.mp3");
+        File.Copy(hideoutPath, unknownPath, overwrite: true);
+        var hashBefore = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(unknownPath))).ToLowerInvariant();
+        var otherCandidate = await _db.LibraryImportCandidates.SingleAsync(
+            item => item.LibraryImportId == unknown.Id && item.RecordingMbid == OtherMbid);
+
+        var outcome = await _service.AcceptCandidateAsync(unknown.Id, otherCandidate.Id, CancellationToken.None);
+
+        Assert.Equal(AcceptOutcome.FileAlreadyInLibrary, outcome);
+        Assert.Equal(1, await _db.LibraryFiles.CountAsync());
+        Assert.Equal(firstWrites, _tagWriter.CoverWrites);
+        var hashAfter = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(unknownPath))).ToLowerInvariant();
+        Assert.Equal(hashBefore, hashAfter);
     }
 
     [Fact]
@@ -467,6 +496,8 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
 
         public byte[]? CoverBytes { get; private set; }
 
+        public int CoverWrites { get; private set; }
+
         /// <summary>When true, simulates a real tag writer by changing the file bytes.</summary>
         public bool MutateFile { get; set; }
 
@@ -477,6 +508,7 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
         {
             CoverPath = filePath;
             CoverBytes = coverArt;
+            CoverWrites++;
             if (MutateFile)
             {
                 using var stream = File.Open(filePath, FileMode.Append);

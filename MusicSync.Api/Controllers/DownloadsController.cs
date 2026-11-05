@@ -23,6 +23,7 @@ public sealed class DownloadsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ApiResponse<DownloadJobCreated>>> Create(
         CreateDownloadRequest request,
         CancellationToken ct)
@@ -46,6 +47,19 @@ public sealed class DownloadsController : ControllerBase
 
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
         var track = await TrackCatalog.GetOrCreateTrackAsync(_db, request.Track, ct);
+
+        var activeStatuses = DownloadJobStatus.Active.ToArray();
+        var activeJobId = await _db.DownloadJobs
+            .Where(job => job.TrackId == track.Id && activeStatuses.Contains(job.Status))
+            .OrderByDescending(job => job.Id)
+            .Select(job => (int?)job.Id)
+            .FirstOrDefaultAsync(ct);
+        if (activeJobId is not null)
+        {
+            return Conflict(ApiResponse<DownloadJobCreated>.Failure(
+                StatusCodes.Status409Conflict,
+                $"Ya existe un trabajo activo (#{activeJobId}) para esta grabación."));
+        }
 
         var job = new DownloadJob
         {

@@ -173,6 +173,81 @@ public sealed class DownloadJobPersistenceTests
     }
 
     [Fact]
+    public async Task CreateDownloadRequest_RejectsRecordingThatAlreadyHasAnActiveJob()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<MusicSyncDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using var db = new MusicSyncDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var track = await CreateTrackAsync(db, "Active Song");
+        var activeJob = await CreateJobAsync(db, track.Id, DownloadJobStatus.Queued);
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
+
+        var result = await controller.Create(
+            new CreateDownloadRequest(new TrackInfo
+            {
+                RecordingMbid = track.RecordingMbid,
+                Title = track.Title,
+                ArtistName = track.ArtistName,
+                DurationMs = track.DurationMs
+            }),
+            CancellationToken.None);
+
+        var response = Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.ObjectResult>(result.Result);
+        Assert.Equal(409, response.StatusCode);
+        var body = Assert.IsType<ApiResponse<DownloadJobCreated>>(response.Value);
+        Assert.Equal(409, body.Status);
+        Assert.Contains($"#{activeJob.Id}", body.Msg);
+        Assert.Equal(1, await db.DownloadJobs.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateDownloadRequest_AllowsRecordingAlreadyInLibrary()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<MusicSyncDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using var db = new MusicSyncDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var track = await CreateTrackAsync(db, "Stored Song");
+        db.LibraryFiles.Add(new LibraryFile
+        {
+            TrackId = track.Id,
+            RelativePath = "Test Artist/Stored Song.mp3",
+            Format = "mp3",
+            SizeBytes = 1,
+            Sha256 = new string('a', 64)
+        });
+        await db.SaveChangesAsync();
+
+        var controller = new DownloadsController(db, new IAcquisitionProvider[] { new DeterministicAcquisitionProvider() });
+        var result = await controller.Create(
+            new CreateDownloadRequest(new TrackInfo
+            {
+                RecordingMbid = track.RecordingMbid,
+                Title = track.Title,
+                ArtistName = track.ArtistName,
+                DurationMs = track.DurationMs
+            }),
+            CancellationToken.None);
+
+        var response = Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.ObjectResult>(result.Result);
+        Assert.Equal(202, response.StatusCode);
+        Assert.Equal(1, await db.DownloadJobs.CountAsync());
+    }
+
+    [Fact]
     public async Task ListQueuedJobs_ReturnsFifoOrderAndQueuePositions()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

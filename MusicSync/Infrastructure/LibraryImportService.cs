@@ -318,6 +318,10 @@ public sealed class LibraryImportService
         if (await _db.LibraryFiles.AnyAsync(item => item.TrackId == track.Id, ct))
             return AcceptOutcome.RecordingAlreadyInLibrary;
 
+        var existingHash = await ComputeSha256Async(absolutePath, ct);
+        if (await _db.LibraryFiles.AnyAsync(item => item.Sha256 == existingHash, ct))
+            return AcceptOutcome.FileAlreadyInLibrary;
+
         await TryEmbedCoverAsync(absolutePath, candidate, ct);
 
         _db.LibraryFiles.Add(new LibraryFile
@@ -547,6 +551,7 @@ public enum AcceptOutcome
     CandidateNotFound,
     AlreadyImported,
     RecordingAlreadyInLibrary,
+    FileAlreadyInLibrary,
     FileMissing,
     PathInUse
 }

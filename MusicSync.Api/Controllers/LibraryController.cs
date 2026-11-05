@@ -156,6 +156,8 @@ public sealed class LibraryController : ControllerBase
                 Conflict(ApiResponse<object>.Failure(StatusCodes.Status409Conflict, "Este archivo ya fue importado.")),
             AcceptOutcome.RecordingAlreadyInLibrary =>
                 Conflict(ApiResponse<object>.Failure(StatusCodes.Status409Conflict, "Esta grabación ya tiene un archivo en la biblioteca.")),
+            AcceptOutcome.FileAlreadyInLibrary =>
+                Conflict(ApiResponse<object>.Failure(StatusCodes.Status409Conflict, "Este archivo ya existe en la biblioteca (misma huella SHA-256).")),
             AcceptOutcome.FileMissing =>
                 BadRequest(ApiResponse<object>.Failure(StatusCodes.Status400BadRequest, "El archivo no existe en la carpeta de la biblioteca.")),
             AcceptOutcome.PathInUse =>

@@ -151,6 +151,13 @@ public sealed class Worker : BackgroundService
             }
 
             var trackInfo = ToTrackInfo(track);
+            var libraryRoot = Path.GetFullPath(_library.Root);
+            var existing = await FindExistingLibraryFileAsync(db, track, libraryRoot, ct);
+            if (existing is not null)
+            {
+                await MarkDuplicateAsync(db, job, existing, ct);
+                return true;
+            }
 
             job.Status = DownloadJobStatus.Searching;
             await db.SaveChangesAsync(ct);
@@ -281,6 +288,15 @@ public sealed class Worker : BackgroundService
                 return true;
             }
 
+            var trackInfo = ToTrackInfo(track);
+            var libraryRoot = Path.GetFullPath(_library.Root);
+            var existing = await FindExistingLibraryFileAsync(db, track, libraryRoot, ct);
+            if (existing is not null)
+            {
+                await MarkDuplicateAsync(db, job, existing, ct);
+                return true;
+            }
+
             if (string.IsNullOrWhiteSpace(job.SourceUrl))
             {
                 Fail(job, "No hay un origen seleccionado para este trabajo.");
@@ -288,8 +304,6 @@ public sealed class Worker : BackgroundService
                 return true;
             }
 
-            var trackInfo = ToTrackInfo(track);
-            var libraryRoot = Path.GetFullPath(_library.Root);
             var stagingDirectory = Path.GetFullPath(_library.StagingDirectory);
             Directory.CreateDirectory(stagingDirectory);
 
@@ -315,15 +329,17 @@ public sealed class Worker : BackgroundService
             var coverArt = await _coverArt.GetFrontCoverAsync(trackInfo.ReleaseGroupMbid ?? Guid.Empty, ct);
             await _tagWriter.WriteAsync(stagedMp3, trackInfo, coverArt, ct);
 
+            var existingAfterTagging = await FindExistingLibraryFileAsync(db, track, libraryRoot, ct);
+            if (existingAfterTagging is not null)
+            {
+                await MarkDuplicateAsync(db, job, existingAfterTagging, ct);
+                return true;
+            }
+
             var target = _pathResolver.ResolveWithinRoot(libraryRoot, trackInfo, asSingle: true, ".mp3");
             if (File.Exists(target))
             {
-                job.Status = DownloadJobStatus.Done;
-                job.Error = "AlreadyExists";
-                job.OutputPath = target;
-                job.FinishedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync(ct);
-                _logger.LogInformation("Job {JobId} skipped: {Path} already exists.", job.Id, target);
+                await MarkDuplicateAsync(db, job, new ExistingLibraryFile(target, InDatabase: false), ct);
                 return true;
             }
 
@@ -374,6 +390,51 @@ public sealed class Worker : BackgroundService
             if (temporaryDirectory is not null && Directory.Exists(temporaryDirectory))
                 Directory.Delete(temporaryDirectory, recursive: true);
         }
+    }
+
+    private async Task<ExistingLibraryFile?> FindExistingLibraryFileAsync(
+        MusicSyncDbContext db,
+        Track track,
+        string libraryRoot,
+        CancellationToken ct)
+    {
+        var relativePath = await db.LibraryFiles
+            .AsNoTracking()
+            .Where(item => item.TrackId == track.Id)
+            .OrderBy(item => item.Id)
+            .Select(item => item.RelativePath)
+            .FirstOrDefaultAsync(ct);
+
+        if (relativePath is not null)
+        {
+            return new ExistingLibraryFile(
+                LibraryPathGuard.ResolveRelativePath(libraryRoot, relativePath),
+                InDatabase: true);
+        }
+
+        var target = _pathResolver.ResolveWithinRoot(libraryRoot, ToTrackInfo(track), asSingle: true, ".mp3");
+        return File.Exists(target)
+            ? new ExistingLibraryFile(target, InDatabase: false)
+            : null;
+    }
+
+    private async Task MarkDuplicateAsync(
+        MusicSyncDbContext db,
+        DownloadJob job,
+        ExistingLibraryFile existing,
+        CancellationToken ct)
+    {
+        job.Status = DownloadJobStatus.Done;
+        job.Error = existing.InDatabase ? "AlreadyInLibrary" : "AlreadyExists";
+        job.OutputPath = existing.Path;
+        job.FinishedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Job {JobId} skipped: recording already in library at {Path} ({Reason}).",
+            job.Id,
+            existing.Path,
+            job.Error);
     }
 
     private IAcquisitionProvider ResolveProvider(string? name)
@@ -449,6 +510,8 @@ public sealed class Worker : BackgroundService
         job.FinishedAt = DateTime.UtcNow;
         job.NextAttemptAt = null;
     }
+
+    private sealed record ExistingLibraryFile(string Path, bool InDatabase);
 }
 
 public record DownloadedFile

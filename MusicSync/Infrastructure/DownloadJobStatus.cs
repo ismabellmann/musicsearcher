@@ -34,4 +34,17 @@ public static class DownloadJobStatus
         Queued,
         NeedsReview
     };
+
+    /// <summary>Jobs that already own the track and would duplicate work for a new enqueue.</summary>
+    public static IReadOnlySet<string> Active { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        Queued,
+        Resolving,
+        Searching,
+        NeedsReview,
+        Approved,
+        Downloading,
+        Tagging,
+        ReadyForTagging
+    };
 }

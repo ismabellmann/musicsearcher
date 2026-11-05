@@ -235,7 +235,9 @@ The folder layout tells the app the artist and title: `Artist/Title.mp3` or
    For a MusicBrainz candidate, the front cover of its release group is fetched from the Cover
    Art Archive and embedded into the existing file. The rest of the file's tags are left
    unchanged, and a missing or unreachable cover does not block the import. A recording or video
-   that is already in the library is refused with `409`.
+   that is already in the library is refused with `409`. The file's SHA-256 is checked before the
+   cover is embedded; if the same bytes are already stored under another recording, the accept is
+   refused with `409` and the file is left untouched.
 4. `POST /api/library/imports/{id}/reject` discards a file.
 5. `PUT /api/library/imports/{id}/path` with `{"relativePath": "..."}` changes the stored path.
    The file is not moved. The new path must stay inside the library and point to an existing file.
@@ -279,6 +281,19 @@ cover with TagLibSharp, stores the file under `Library__Root`, records a
 `LibraryFile`, and marks the job `Done`. A missing cover or an unreachable
 archive never fails the job. Tags are written only for newly acquired files;
 files already in the library are not rewritten.
+
+Duplicate handling:
+
+- If the requested recording already has a `LibraryFile`, the request still
+  returns `202` and creates a job. The worker marks that job `Done` with the
+  note `AlreadyInLibrary` and the existing path in `outputPath`, without calling
+  the acquisition provider.
+- If the target path already exists on disk but has no `LibraryFile`, the job
+  is marked `Done` with `AlreadyExists`.
+- If the same recording already has an active job (`Queued`, `Resolving`,
+  `Searching`, `NeedsReview`, `Approved`, `Downloading`, `Tagging`, or
+  `ReadyForTagging`), the request returns `409 Conflict` and no second job is
+  created.
 
 Queue management endpoints:
 

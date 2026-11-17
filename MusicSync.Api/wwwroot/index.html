@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicSync UI Mockup</title>
+  <script src="/app.js" defer></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f4f5;
+      --surface: #fff;
+      --surface-2: #fafafa;
+      --text: #18181b;
+      --muted: #71717a;
+      --border: #e4e4e7;
+      --accent: #7c3aed;
+      --accent-strong: #6d28d9;
+      --accent-soft: #ede9fe;
+      --success: #15803d;
+      --success-soft: #dcfce7;
+      --warning: #b45309;
+      --warning-soft: #fef3c7;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --shadow: 0 10px 30px rgb(24 24 27 / .06);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #111113;
+      --surface: #1b1b1f;
+      --surface-2: #242429;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --border: #3f3f46;
+      --accent: #a78bfa;
+      --accent-strong: #c4b5fd;
+      --accent-soft: #312e49;
+      --success: #86efac;
+      --success-soft: #17351f;
+      --warning: #fcd34d;
+      --warning-soft: #3b2f0b;
+      --danger: #fca5a5;
+      --danger-soft: #431b1b;
+      --shadow: 0 10px 30px rgb(0 0 0 / .2);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      [data-theme="system"] { color-scheme: dark; }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 220px 1fr; }
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 22px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; font-weight: 750; font-size: 17px; }
+    .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: white; background: var(--accent); }
+    nav { display: grid; gap: 4px; }
+    .nav-button {
+      border: 0; border-radius: 9px; padding: 10px 12px; color: var(--muted); background: transparent;
+      text-align: left; display: flex; align-items: center; gap: 10px;
+    }
+    .nav-button:hover, .nav-button.active { color: var(--text); background: var(--accent-soft); }
+    .nav-icon { width: 20px; text-align: center; opacity: .9; }
+    .sidebar-footer { margin-top: auto; display: grid; gap: 10px; padding: 0 6px; }
+    .theme-button, .ghost-button, .primary-button, .danger-button {
+      border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); background: var(--surface);
+    }
+    .theme-button, .ghost-button { width: 100%; text-align: left; }
+    .primary-button { border-color: var(--accent); color: white; background: var(--accent); font-weight: 650; }
+    .primary-button:hover { background: var(--accent-strong); }
+    .danger-button { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+    .main { min-width: 0; }
+    .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 34px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .mobile-menu { display: none; }
+    .topbar-title { font-size: 18px; font-weight: 700; }
+    .health { color: var(--success); display: flex; align-items: center; gap: 7px; font-size: 13px; }
+    .health::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .content { max-width: 1120px; margin: 0 auto; padding: 30px 34px 50px; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .eyebrow { color: var(--accent); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    h1 { margin: 4px 0 7px; font-size: clamp(25px, 4vw, 34px); letter-spacing: -.03em; }
+    h2 { margin: 0; font-size: 20px; }
+    p { color: var(--muted); margin: 0; }
+    .hero { margin-bottom: 25px; }
+    .search-box { display: flex; gap: 8px; margin-top: 22px; }
+    input, select { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); background: var(--surface); outline: none; }
+    input:focus, select:focus, button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 1px; }
+    .search-box input { flex: 1; min-width: 0; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 25px 0 12px; }
+    .toolbar-actions { display: flex; gap: 8px; }
+    .cards { display: grid; gap: 10px; }
+    .card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+    .result, .job, .file { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+    .cover { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; color: white; background: linear-gradient(135deg, var(--accent), #2563eb); font-size: 18px; flex: 0 0 auto; }
+    .details { min-width: 0; flex: 1; }
+    .title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subtitle { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .small-button { border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; color: var(--text); background: var(--surface-2); }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .badge.success { color: var(--success); background: var(--success-soft); }
+    .badge.warning { color: var(--warning); background: var(--warning-soft); }
+    .badge.danger { color: var(--danger); background: var(--danger-soft); }
+    .badge.neutral { color: var(--muted); background: var(--surface-2); }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px; }
+    .stat { padding: 16px; }
+    .stat-value { font-size: 25px; font-weight: 750; }
+    .stat-label { color: var(--muted); font-size: 13px; }
+    .empty { padding: 35px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+    .playlist-form { max-width: 700px; }
+    .playlist-form input { width: 100%; }
+    .hint { font-size: 12px; margin-top: 8px; }
+    .modal { border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--surface); box-shadow: 0 25px 80px rgb(0 0 0 / .25); max-width: 420px; width: calc(100% - 32px); }
+    .modal::backdrop { background: rgb(0 0 0 / .45); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+    @media (max-width: 720px) {
+      .app { display: block; }
+      .sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; width: 230px; transform: translateX(-100%); transition: transform .18s ease; box-shadow: var(--shadow); }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu { display: inline-grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+      .topbar { height: 60px; padding: 0 16px; }
+      .topbar-title { font-size: 16px; }
+      .health { display: none; }
+      .content { padding: 24px 16px 40px; }
+      .search-box { flex-wrap: wrap; }
+      .search-box select { order: 2; flex: 1; }
+      .search-box .primary-button { order: 3; }
+      .stats { gap: 8px; }
+      .stat { padding: 12px; }
+      .stat-value { font-size: 20px; }
+      .result, .job, .file { align-items: flex-start; }
+      .actions { flex-direction: column; align-items: stretch; }
+      .badge { margin-left: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark">♫</span><span>MusicSync</span></div>
+      <nav aria-label="Main navigation">
+        <button class="nav-button active" data-view="search"><span class="nav-icon">⌕</span> Search</button>
+        <button class="nav-button" data-view="activity"><span class="nav-icon">◷</span> Activity</button>
+        <button class="nav-button" data-view="library"><span class="nav-icon">▤</span> Library</button>
+        <button class="nav-button" data-view="playlists"><span class="nav-icon">≡</span> Playlists</button>
+        <button class="nav-button" data-view="settings"><span class="nav-icon">⚙</span> Settings</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="theme-button" id="theme-toggle" aria-label="Change color theme">◐ Theme: System</button>
+        <button class="ghost-button" id="logout">↪ Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
+          <span class="topbar-title" id="page-title">Search</span>
+        </div>
+        <span class="health">Service online</span>
+      </header>
+
+      <div class="content">
+        <section class="view active" data-page="search">
+          <div class="hero"><span class="eyebrow">Find something to save</span><h1>Search your music</h1><p>Search canonical metadata, review the match, and add it to the queue.</p></div>
+          <div class="search-box">
+            <input id="search-input" placeholder="Song, album, or artist" aria-label="Search music">
+            <select aria-label="Search type"><option>Tracks</option><option>Albums</option><option>Artists</option></select>
+            <button class="primary-button" id="search-button">Search</button>
+          </div>
+          <div class="toolbar"><h2>Results</h2><span class="subtitle">3 matches</span></div>
+          <div class="cards" id="search-results">
+            <article class="card result"><div class="cover">♫</div><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · The Wall · 1979</div></div><div class="actions"><span class="badge success">98% match</span><button class="small-button" data-toast="Track added to queue">Download</button></div></article>
+            <article class="card result"><div class="cover">◉</div><div class="details"><div class="title">Comfortably Numb</div><div class="subtitle">Pink Floyd · The Wall · 1979</div></div><div class="actions"><span class="badge success">96% match</span><button class="small-button" data-toast="Track added to queue">Download</button></div></article>
+            <article class="card result"><div class="cover">♪</div><div class="details"><div class="title">Wish You Were Here</div><div class="subtitle">Pink Floyd · Wish You Were Here · 1975</div></div><div class="actions"><span class="badge warning">Review</span><button class="small-button" data-toast="Opening candidate review">Review</button></div></article>
+          </div>
+        </section>
+
+        <section class="view" data-page="activity">
+          <div class="hero"><span class="eyebrow">Live queue</span><h1>Activity</h1><p>Jobs update here automatically while the worker processes them.</p></div>
+          <div class="stats"><div class="card stat"><div class="stat-value">2</div><div class="stat-label">In progress</div></div><div class="card stat"><div class="stat-value">18</div><div class="stat-label">Completed</div></div><div class="card stat"><div class="stat-value">1</div><div class="stat-label">Needs review</div></div></div>
+          <div class="cards">
+            <article class="card job"><div class="cover">♫</div><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · Started moments ago</div></div><span class="badge warning">Tagging</span><button class="small-button" data-toast="Job cancellation requested">Cancel</button></article>
+            <article class="card job"><div class="cover">◉</div><div class="details"><div class="title">Comfortably Numb</div><div class="subtitle">Pink Floyd · Waiting for worker</div></div><span class="badge neutral">Queued</span><button class="small-button" data-toast="Job cancelled">Cancel</button></article>
+            <article class="card job"><div class="cover">✓</div><div class="details"><div class="title">Hey You</div><div class="subtitle">Pink Floyd · The Wall</div></div><span class="badge success">Done</span></article>
+          </div>
+        </section>
+
+        <section class="view" data-page="library">
+          <div class="hero"><span class="eyebrow">Your files</span><h1>Library</h1><p>Browse imported and acquired music without exposing filesystem details.</p></div>
+          <div class="toolbar"><input placeholder="Filter by title, artist, album" aria-label="Filter library" style="max-width:360px"><div class="toolbar-actions"><select aria-label="Library origin"><option>All files</option><option>Imported</option><option>Downloaded</option></select><button class="ghost-button" style="width:auto">Scan library</button></div></div>
+          <div class="cards">
+            <article class="card file"><div class="cover">♫</div><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · The Wall · 8.4 MB</div></div><span class="badge success">Imported</span><button class="small-button" data-confirm="Delete this file from the library?">Delete</button></article>
+            <article class="card file"><div class="cover">◉</div><div class="details"><div class="title">Comfortably Numb</div><div class="subtitle">Pink Floyd · The Wall · 7.9 MB</div></div><span class="badge neutral">Downloaded</span><button class="small-button" data-confirm="Delete this file from the library?">Delete</button></article>
+          </div>
+        </section>
+
+        <section class="view" data-page="playlists">
+          <div class="hero"><span class="eyebrow">Bulk import</span><h1>Playlist preview</h1><p>Paste a public Spotify playlist URL. No Spotify credentials are required.</p></div>
+          <div class="card" style="padding:18px;max-width:720px"><div class="playlist-form"><input id="playlist-url" value="https://open.spotify.com/playlist/example" aria-label="Spotify playlist URL"><button class="primary-button" id="playlist-preview" style="margin-top:10px">Create preview</button><p class="hint">Tracks are matched to MusicBrainz before anything is added to the queue.</p></div></div>
+          <div class="toolbar"><h2>Preview items</h2><button class="primary-button" data-toast="2 confirmed tracks added to queue">Enqueue confirmed</button></div>
+          <div class="cards"><article class="card result"><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · Candidate 1 of 10</div></div><span class="badge success">Matched</span><button class="small-button">Change</button></article><article class="card result"><div class="details"><div class="title">Wish You Were Here</div><div class="subtitle">Pink Floyd · Choose a candidate before enqueueing</div></div><span class="badge warning">Needs review</span><button class="small-button">Review</button></article></div>
+        </section>
+
+        <section class="view" data-page="settings">
+          <div class="hero"><span class="eyebrow">Private service</span><h1>Settings</h1><p>Keep the service secure and configured for your library.</p></div>
+          <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong>musicadmin</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" style="width:auto">Change password</button><button class="danger-button">Sign out all sessions</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p style="margin-top:5px">Healthy · SQLite · Worker online</p><p class="hint">Secret values are never displayed in the interface.</p></article></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog class="modal" id="confirm-dialog"><form method="dialog" style="padding:22px"><h2>Confirm action</h2><p id="confirm-text" style="margin-top:8px"></p><div class="modal-actions"><button class="ghost-button" value="cancel" style="width:auto">Cancel</button><button class="danger-button" value="confirm">Confirm</button></div></form></dialog>
+  <div id="toast" style="position:fixed;right:18px;bottom:18px;display:none;padding:12px 15px;border:1px solid var(--border);border-radius:9px;background:var(--surface);box-shadow:var(--shadow)"></div>
+
+  <script>
+    const root = document.documentElement;
+    const themeButton = document.querySelector('#theme-toggle');
+    const themes = ['system', 'light', 'dark'];
+    const themeLabels = { system: 'System', light: 'Light', dark: 'Dark' };
+    function updateThemeButton() { themeButton.textContent = `◐ Theme: ${themeLabels[root.dataset.theme]}`; }
+    updateThemeButton();
+    themeButton.addEventListener('click', () => {
+      const next = themes[(themes.indexOf(root.dataset.theme) + 1) % themes.length];
+      root.dataset.theme = next;
+      localStorage.setItem('musicsync-theme', next);
+      updateThemeButton();
+    });
+
+    const title = document.querySelector('#page-title');
+    function showView(view) {
+      document.querySelectorAll('.view').forEach(item => item.classList.toggle('active', item.dataset.page === view));
+      document.querySelectorAll('.nav-button').forEach(item => item.classList.toggle('active', item.dataset.view === view));
+      title.textContent = view[0].toUpperCase() + view.slice(1);
+      document.querySelector('#sidebar').classList.remove('open');
+      location.hash = view;
+    }
+    document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
+    document.querySelector('#mobile-menu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
+    showView(location.hash.slice(1) || 'search');
+
+    const toast = document.querySelector('#toast');
+    let toastTimer;
+    function showToast(message) { toast.textContent = message; toast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.style.display = 'none', 2400); }
+    document.querySelectorAll('[data-toast]').forEach(button => button.addEventListener('click', () => showToast(button.dataset.toast)));
+    const dialog = document.querySelector('#confirm-dialog');
+    document.querySelectorAll('[data-confirm]').forEach(button => button.addEventListener('click', () => { document.querySelector('#confirm-text').textContent = button.dataset.confirm; dialog.showModal(); }));
+    document.querySelector('#logout').addEventListener('click', () => showToast('Sign out would call /api/auth/logout'));
+    document.querySelector('#search-button').addEventListener('click', () => showToast('Search would call /api/search'));
+  </script>
+</body>
+</html>

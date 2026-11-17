@@ -225,6 +225,18 @@ app.Use(async (context, next) =>
     }
 });
 
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    await next(context);
+});
+
+// The shell and login/setup UI must be reachable before the first account exists.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // Until the first account exists, only these paths answer (section 11).
 var setupExemptPaths = new[] { "/api/health", "/api/auth/status", "/api/auth/setup" };
 
@@ -249,13 +261,6 @@ app.Use(async (context, next) =>
 
 app.UseRouting();
 app.UseRateLimiter();
-app.Use(async (context, next) =>
-{
-    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-    context.Response.Headers["X-Frame-Options"] = "DENY";
-    context.Response.Headers["Referrer-Policy"] = "no-referrer";
-    await next(context);
-});
 app.UseAuthentication();
 app.UseAuthorization();
 

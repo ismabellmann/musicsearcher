@@ -375,6 +375,14 @@ Manual retries currently have no configured limit; automatic transient retry
 and backoff are not implemented. Approval preserves the candidate source and
 score; audio acquisition remains a later pipeline step.
 
+## Web UI
+
+The application serves a lightweight dependency-free frontend from `/`. It uses vanilla
+HTML, CSS, and JavaScript with no framework, external assets, web fonts, or build step.
+It includes Search, Activity/SSE, Library, Playlists, Settings, setup/login handling, and
+responsive desktop/mobile layouts. The theme button cycles through system, light, and dark
+themes; the choice is stored locally in the browser.
+
 ## Development
 
 The commands below should be run from the repository root. On immutable systems such as Bazzite, a development container or Distrobox is a convenient way to provide the required .NET runtime and SDK.

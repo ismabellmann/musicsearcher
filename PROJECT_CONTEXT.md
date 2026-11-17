@@ -369,7 +369,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
 6. **M6 Realtime and library:** ✅ Implemented - `LibraryFile` rows record downloaded and imported files, duplicate admission by recording MBID, SHA-256, and target path is implemented, general listing/detail/delete endpoints are available, and persisted authenticated SSE job events support replay with `Last-Event-ID`. UI integration and event retention maintenance remain.
 7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
-8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
+8. **M8 UI:** 🚧 In progress - dependency-free static frontend with Search, Activity, Library, Playlists, Settings, authentication, responsive layout, and system/light/dark theme toggle.
 
 ### Recommended implementation order
 
@@ -421,7 +421,7 @@ The application staging directory defaults to `/music/.musicsync-staging` in the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip
 that directory.
 
-Remaining after this slice: album layout, analytics, settings, UI, targeted security follow-ups, and final deployment verification.
+Remaining after this slice: analytics, encrypted settings/secrets, targeted security follow-ups, UI API polish, and final deployment verification.
 
 ## 15. Open questions (ask the owner before assuming)
 

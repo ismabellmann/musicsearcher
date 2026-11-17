@@ -10,7 +10,11 @@ public static class MusicSyncDatabaseMigrator
     private const string HistoryTable = "__EFMigrationsHistory";
 
     // Tables created by migrations after InitialCreate. Legacy baselining checks only the InitialCreate schema.
-    private static readonly string[] MigrationOnlyTables = { "TrackArtists", "DownloadJobCandidates", "LibraryImports", "LibraryImportCandidates" };
+    private static readonly string[] MigrationOnlyTables =
+    {
+        "TrackArtists", "DownloadJobCandidates", "LibraryImports", "LibraryImportCandidates",
+        "PlaylistImports", "PlaylistImportItems"
+    };
 
     // Columns added after InitialCreate, keyed by table.
     private static readonly Dictionary<string, string[]> MigrationOnlyColumns = new(StringComparer.Ordinal)

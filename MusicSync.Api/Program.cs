@@ -65,6 +65,7 @@ builder.Services.AddSingleton<LibraryPathResolver>();
 var musicBrainzOptions = builder.Configuration.GetSection("MusicBrainz").Get<MusicBrainzOptions>() ?? new MusicBrainzOptions();
 var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingOptions>() ?? new MatchingOptions();
 var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
+var playlistOptions = builder.Configuration.GetSection("Playlist").Get<PlaylistOptions>() ?? new PlaylistOptions();
 
 var authOptions = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
 var coverArtOptions = builder.Configuration.GetSection("CoverArt").Get<CoverArtOptions>() ?? new CoverArtOptions();
@@ -83,6 +84,7 @@ builder.Services.AddSingleton<ICoverArtProvider>(serviceProvider => new CoverArt
     serviceProvider.GetRequiredService<ILogger<CoverArtArchiveClient>>()));
 builder.Services.AddSingleton(matchingOptions);
 builder.Services.AddSingleton(workerOptions);
+builder.Services.AddSingleton(playlistOptions);
 builder.Services.AddSingleton<IMatchScorer>(_ => new TrackScorer(
     matchingOptions.AutoAcceptThreshold,
     matchingOptions.ReviewThreshold,
@@ -113,13 +115,9 @@ builder.Services.AddHttpClient<IPopularityProvider, ListenBrainzClient>();
 builder.Services.AddHttpClient("Spotify");
 builder.Services.AddTransient<IPlaylistSource>(serviceProvider =>
 {
-    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<SpotifyPlaylistSource>>();
     var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-    var clientId = configuration["Spotify:ClientId"] ?? configuration["Spotify__ClientId"] ?? string.Empty;
-    var clientSecret = configuration["Spotify:ClientSecret"] ?? configuration["Spotify__ClientSecret"] ?? string.Empty;
-
-    return new SpotifyPlaylistSource(httpClientFactory.CreateClient("Spotify"), logger, clientId, clientSecret);
+    return new SpotifyPlaylistSource(httpClientFactory.CreateClient("Spotify"), logger);
 });
 
 builder.Services.AddDataProtection()
@@ -127,6 +125,7 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<LibraryImportService>();
+builder.Services.AddScoped<PlaylistImportService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

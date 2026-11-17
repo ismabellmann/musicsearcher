@@ -66,7 +66,7 @@ public sealed class DownloadJobPersistenceTests
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
         Assert.True(await db.Database.CanConnectAsync());
-        Assert.Equal(9, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(10, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Tracks.ToListAsync());
     }
 
@@ -100,7 +100,7 @@ public sealed class DownloadJobPersistenceTests
 
         await MusicSyncDatabaseMigrator.MigrateAsync(db);
 
-        Assert.Equal(9, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(10, (await db.Database.GetAppliedMigrationsAsync()).Count());
         var persistedTrack = await db.Tracks.SingleAsync();
         Assert.Equal(track.RecordingMbid, persistedTrack.RecordingMbid);
         Assert.Equal("Legacy Track", persistedTrack.Title);

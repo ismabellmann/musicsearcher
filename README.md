@@ -92,7 +92,7 @@ tests/
 | Candidate matching and scoring | 🚧 In progress (scorer implemented; candidate selection pending) |
 | MusicBrainz, ListenBrainz, and Spotify parsing | ✅ Implemented with tests |
 | Search and playlist API integration | 🚧 In progress |
-| Playlist imports and track mapping | ⏳ Planned |
+| Playlist imports and track mapping | 🚧 In progress (public preview and enqueue workflow) |
 | Realtime progress and library endpoints | ⏳ Planned |
 | Analytics and container packaging | ⏳ Planned |
 | Web UI | ⏳ Planned |
@@ -147,8 +147,8 @@ ignored by git. This is a development convenience only. In production, set
 |---|---|---|
 | `MusicBrainz__UserAgent` | `MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)` | Identifying User-Agent for MusicBrainz, in the form `Name/Version (contact)`. MusicBrainz needs no account or key. |
 | `ListenBrainz__Token` | empty | Optional ListenBrainz token. It is read but not yet sent with any request. |
-| `Spotify__ClientId` | empty | Optional Spotify app client ID, used by the current playlist client. |
-| `Spotify__ClientSecret` | empty | Optional Spotify app client secret, used by the current playlist client. |
+| `Playlist__MaxTracks` | `100` | Maximum public Spotify tracks processed in one preview. |
+| `Playlist__MaxCandidates` | `10` | Maximum MusicBrainz candidates stored per playlist track. |
 | `CoverArt__Enabled` | `true` | Fetch the release-group front cover from the Cover Art Archive when tagging a newly acquired track. |
 | `CoverArt__MaxBytes` | `5000000` | Largest cover image accepted, in bytes. |
 | `CoverArt__TimeoutSeconds` | `15` | Cover Art Archive request timeout, in seconds. |
@@ -230,8 +230,8 @@ characters. Setup works only once.
 - Endpoints: `GET /api/auth/status`, `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/password`.
 
 Known limits: login attempts are not rate-limited yet, logout and password change do not
-revoke a session that was copied elsewhere before it expired, and the ListenBrainz and
-Spotify secrets are read from environment variables, not stored in the database.
+revoke a session that was copied elsewhere before it expired, and the ListenBrainz token is
+read from the environment and not stored in the database.
 
 The API applies pending EF Core migrations on startup. New schema changes should
 be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use
@@ -331,6 +331,16 @@ Duplicate handling:
   `Searching`, `NeedsReview`, `Approved`, `Downloading`, `Tagging`, or
   `ReadyForTagging`), the request returns `409 Conflict` and no second job is
   created.
+
+Playlist import uses public Spotify pages and does not require Spotify credentials:
+
+1. `POST /api/playlists/preview` with `{"url":"https://open.spotify.com/playlist/..."}`
+   persists the ordered track list and MusicBrainz candidates. The preview is limited by
+   `Playlist__MaxTracks` and stores up to `Playlist__MaxCandidates` candidates per item.
+2. `GET /api/playlists/{id}` returns the preview and item statuses. Automatic matches are
+   marked `Matched`; ambiguous and missing matches remain reviewable or `NoMatch`.
+3. `POST /api/playlists/{id}/enqueue` with `itemIds` and optional `selections` enqueues only
+   confirmed candidates. Repeating the request does not create duplicate jobs.
 
 Queue management endpoints:
 

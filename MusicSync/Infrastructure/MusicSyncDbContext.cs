@@ -21,6 +21,8 @@ public class MusicSyncDbContext : DbContext
     public DbSet<LibraryFile> LibraryFiles { get; set; } = null!;
     public DbSet<Setting> Settings { get; set; } = null!;
     public DbSet<UserAccount> UserAccounts { get; set; } = null!;
+    public DbSet<PlaylistImport> PlaylistImports { get; set; } = null!;
+    public DbSet<PlaylistImportItem> PlaylistImportItems { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +40,20 @@ public class MusicSyncDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(item => item.ArtistId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PlaylistImport>(entity =>
+        {
+            entity.HasIndex(item => item.ExternalId);
+            entity.HasMany(item => item.Items)
+                .WithOne(item => item.PlaylistImport)
+                .HasForeignKey(item => item.PlaylistImportId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlaylistImportItem>(entity =>
+        {
+            entity.HasIndex(item => new { item.PlaylistImportId, item.Position }).IsUnique();
         });
 
         modelBuilder.Entity<DownloadJobCandidate>(entity =>

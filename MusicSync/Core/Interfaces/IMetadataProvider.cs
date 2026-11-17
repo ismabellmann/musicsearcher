@@ -93,7 +93,7 @@ public record RankedRecording
 
 /// <summary>
 /// Interface for Spotify public playlist source.
-/// Uses Client Credentials flow (read-only, no user OAuth tokens).
+/// Uses public-page parsing and requires no Spotify credentials.
 /// </summary>
 public interface IPlaylistSource
 {

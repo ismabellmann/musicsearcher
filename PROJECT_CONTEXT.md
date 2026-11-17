@@ -195,7 +195,7 @@ Use **MusicBrainz IDs (MBIDs)** as canonical identifiers wherever possible.
 
 ### 8.3 Playlists
 - Accept public Spotify playlist URLs or IDs only.
-- Prefer the official Web API with the **Client Credentials** flow (read-only, no user data). Verify which endpoints are currently available to new apps, because Spotify has restricted some.
+- Use public Spotify playlist pages or embed pages with no Spotify credentials. Do not require user OAuth or Client Credentials; page format changes may require parser maintenance.
 - Map each Spotify track to a MusicBrainz recording (ISRC lookup first, then fuzzy title/artist/duration) before downloading.
 
 ### 8.4 Matching (the hard part)
@@ -293,8 +293,10 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | POST | `/library/covers` | Backfill front covers for imported files (§8.9) |
 | GET | `/search?type=track\|album\|artist&q=&sort=` | MusicBrainz search |
 | GET | `/artists/{mbid}/top?count=` | Top recordings (ListenBrainz) |
-| GET | `/playlists?url=` | Resolve a public Spotify playlist |
-| POST | `/downloads` | Enqueue track(s), album or playlist |
+| POST | `/playlists/preview` | Resolve a public Spotify playlist and persist MusicBrainz candidates |
+| GET | `/playlists/{id}` | Read a persisted playlist preview |
+| POST | `/playlists/{id}/enqueue` | Enqueue selected confirmed playlist items |
+| POST | `/downloads` | Enqueue a single track |
 | GET | `/downloads` | List jobs (filter by status) |
 | GET | `/downloads/{id}` | Get a job and its current status |
 | POST | `/downloads/{id}/approve` | Approve a `NeedsReview` candidate |
@@ -332,13 +334,13 @@ Matching__DurationToleranceSeconds=5
 Worker__Concurrency=1
 MusicBrainz__UserAgent=MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)  # default; use an email or URL of your own if preferred
 ListenBrainz__Token=         # optional
-Spotify__ClientId=           # optional
-Spotify__ClientSecret=       # optional
+Playlist__MaxTracks=100
+Playlist__MaxCandidates=10
 ```
 
 Implementation status of this list:
 
-- Read by the code: `ASPNETCORE_URLS` (default `http://localhost:5000`), `Config__Dir`, `Auth__SecureCookies`, `Auth__SessionHours`, `Data__DatabasePath`, `Library__Root` (default: `tracks/` at the repository root), `Library__StagingDirectory` (default: `data/staging` under the API content root), `Library__YouTubeFallback` (default `true`), `Library__YouTubeMaxCandidates` (default `5`), `Library__EmbedCoverOnImport` (default `true`), `Acquisition__LocalSourceDirectory` (default: `tracks/`), `Audio__Quality`, `CoverArt__Enabled` (default `true`; applies to downloads, imported files and backfill), `CoverArt__MaxBytes` (default `5000000`), `CoverArt__TimeoutSeconds` (default `15`), `Tools__Ffmpeg`, `Tools__Ffprobe`, `Tools__YtDlp`, `Worker__MaxAutomaticRetries`, `Worker__RetryBaseDelaySeconds`, `Matching__AutoAcceptThreshold`, `Matching__ReviewThreshold`, `Matching__DurationToleranceSeconds`, `MusicBrainz__UserAgent` (shared with ListenBrainz requests), `ListenBrainz__Token`, and `Spotify__ClientId`/`Spotify__ClientSecret`.
+- Read by the code: `ASPNETCORE_URLS` (default `http://localhost:5000`), `Config__Dir`, `Auth__SecureCookies`, `Auth__SessionHours`, `Data__DatabasePath`, `Library__Root` (default: `tracks/` at the repository root), `Library__StagingDirectory` (default: `data/staging` under the API content root), `Library__YouTubeFallback` (default `true`), `Library__YouTubeMaxCandidates` (default `5`), `Library__EmbedCoverOnImport` (default `true`), `Acquisition__LocalSourceDirectory` (default: `tracks/`), `Audio__Quality`, `CoverArt__Enabled` (default `true`; applies to downloads, imported files and backfill), `CoverArt__MaxBytes` (default `5000000`), `CoverArt__TimeoutSeconds` (default `15`), `Tools__Ffmpeg`, `Tools__Ffprobe`, `Tools__YtDlp`, `Worker__MaxAutomaticRetries`, `Worker__RetryBaseDelaySeconds`, `Matching__AutoAcceptThreshold`, `Matching__ReviewThreshold`, `Matching__DurationToleranceSeconds`, `MusicBrainz__UserAgent` (shared with ListenBrainz requests), `ListenBrainz__Token`, `Playlist__MaxTracks`, and `Playlist__MaxCandidates`.
 - Development defaults: when `ASPNETCORE_ENVIRONMENT=Development` (set by the `MusicSync.Api` launch profile), `Config__Dir` and `Data__DatabasePath` default to a git-ignored `config/` folder at the repository root. Production must set both explicitly to persistent paths, for example `/config` and `/config/musicsync.db` in the container.
 - Validated at startup (the app stops with a clear error if they are invalid): `MusicBrainz__UserAgent` must look like `Name/Version (contact)`; `Matching__*` thresholds must be between 0 and 1, with review not above auto-accept; `Audio__Format` must be `mp3`; `Worker__Concurrency` must be `1`.
 - Not read yet: `Auth__Disable` was removed from the sample; there is no authentication bypass.
@@ -362,7 +364,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - a shared request gate paces MusicBrainz at one request per second process-wide, 429/503 responses are retried with Retry-After support, and failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Cache correctness (the cache keys currently include timestamps, so entries are never read), ListenBrainz retries, error/response consistency across all endpoints, and broader endpoint tests remain.
 3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - album layout (§8.6), active-work cancellation, and SSE.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
-5. **M5 Playlists and top-N:** Spotify playlist and ListenBrainz top-recording parsing foundations and API endpoints are present. 🚧 In progress - end-to-end playlist track mapping and enqueue/import workflow remain.
+5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, and ListenBrainz top-recording endpoints are present. 🚧 In progress - broader album/artist bulk workflows and live validation against Spotify page variations remain.
 6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows record downloaded and imported files, and duplicate admission by recording MBID, SHA-256, and target path is implemented. Remaining: SSE and general library listing/deletion.
 7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
 8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
@@ -371,7 +373,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 
 1. Complete one single-track pipeline end to end using only an acquisition source the user is authorized to access: scorer correctness, approved-candidate behavior, acquisition, MP3 conversion, tagging, safe library path, duplicate detection, and persisted `LibraryFile`. This vertical slice is implemented, including duplicate-safe admission.
 2. Verify job lifecycle and failure recovery for that vertical slice with integration tests; do not mark a job `Done` until the file and database record are successfully committed.
-3. Add bulk enqueue/import workflows, starting with public Spotify playlists, then album and artist top-N flows.
+3. Add bulk enqueue/import workflows beyond public Spotify playlists, starting with album and artist top-N flows.
 4. Add SSE/activity and library list/delete endpoints, followed by the minimal UI that exposes Search, Activity, Library, and Settings.
 5. Prioritize security, configuration, and deployment packaging needed for the chosen target; defer analytics and other secondary features until the core workflow is dependable.
 
@@ -385,15 +387,25 @@ Implemented and covered by tests. Final behavior:
 
 Tests cover active-job conflicts, existing stored recordings, existing target paths, import hash duplicates, and staging exclusion (Core 83, Infrastructure 108).
 
-### Current slice: Docker packaging (M7)
+### Completed slice: public Spotify playlist preview and enqueue (M5)
 
-Package the verified backend for Docker on TrueNAS as a custom app:
+Implemented without Spotify credentials:
+- `POST /api/playlists/preview` resolves a public Spotify embed page, persists the playlist and its ordered tracks, and stores up to `Playlist__MaxCandidates` MusicBrainz candidates per item.
+- `GET /api/playlists/{id}` returns the persisted preview and candidate statuses (`Matched`, `NeedsReview`, `NoMatch`, or `Enqueued`).
+- `POST /api/playlists/{id}/enqueue` enqueues selected confirmed candidates, reusing normal track/job persistence and active-job duplicate protection. Repeated enqueue requests are idempotent.
+- Public-page parsing currently uses Spotify's `__NEXT_DATA__` embed payload. Spotify page format changes may require parser updates.
+
+The next playlist follow-up is live validation against several public page variants and adding explicit item-level candidate selection tests through the API.
+
+### Current slice: deployment verification (M7)
+
+Verify and deploy the packaged backend for Docker on TrueNAS as a custom app:
 - Listen on port `28080`, mount the music library at `/music` and persistent config/database at `/config`.
 - Run as non-root with ffmpeg, yt-dlp, and Deno in the image.
 - Publish through GitHub Actions to GHCR as `ghcr.io/ismabellmann/musicsearcher:latest`; the package must be made public for anonymous TrueNAS pulls.
 - Pin yt-dlp `2026.10.26` and Deno `2.9.8` with SHA-256 verification in the Dockerfile.
 - Document the required host folders and environment variables (`Config__Dir`, `Data__DatabasePath`, `Library__Root`, and provider/tool paths).
-- Verify the image with Podman, then deploy it on the NAS and verify persistence, permissions, and upgrades.
+- The local Podman image is verified; deploy it on the NAS and verify persistence, permissions, and upgrades.
 
 The application staging directory defaults to `/music/.musicsync-staging` in the image so the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip

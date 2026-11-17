@@ -12,44 +12,24 @@ public sealed class SpotifyPlaylistSourceTests
     public async Task GetPlaylistAsync_MapsPlaylistAndTrackItems()
     {
         const string playlistJson = """
-        {
-          "id": "playlist-1",
-          "name": "Example Playlist",
-          "total_tracks": 1,
-          "owner": { "display_name": "Example User" },
-          "tracks": {
-            "items": [
-              {
-                "track": {
-                  "id": "track-1",
-                  "name": "Example Song",
-                  "track_number": 3,
-                  "duration_ms": 201000,
-                  "explicit": true,
-                  "artists": [{ "name": "Artist One" }, { "name": "Artist Two" }],
-                  "album": { "name": "Example Album" }
-                }
-              }
-            ]
-          }
-        }
+        {"props":{"pageProps":{"state":{"data":{"entity":{"id":"playlist1","name":"Example Playlist","subtitle":"Example User","trackList":[{"uri":"spotify:track:track1","entityType":"track","title":"Example Song","subtitle":"Artist One, Artist Two","duration":201000,"isExplicit":true}]}}}}}}
         """;
 
         var client = CreateClient(playlistJson);
 
-        var playlist = await client.GetPlaylistAsync("playlist-1", CancellationToken.None);
+        var playlist = await client.GetPlaylistAsync("https://open.spotify.com/playlist/playlist1", CancellationToken.None);
 
-        Assert.Equal("playlist-1", playlist.Id);
+        Assert.Equal("playlist1", playlist.Id);
         Assert.Equal("Example Playlist", playlist.Name);
         Assert.Equal(1, playlist.TotalTracks);
         Assert.Equal("Example User", playlist.OwnerDisplayName);
 
         var track = Assert.Single(playlist.Tracks);
-        Assert.Equal("track-1", track.Id);
+        Assert.Equal("track1", track.Id);
         Assert.Equal("Example Song", track.Name);
         Assert.Equal("Artist One, Artist Two", track.ArtistName);
-        Assert.Equal("Example Album", track.AlbumName);
-        Assert.Equal(3, track.TrackNumber);
+        Assert.Null(track.AlbumName);
+        Assert.Equal(0, track.TrackNumber);
         Assert.Equal(201000, track.DurationMs);
         Assert.True(track.IsExplicit);
     }
@@ -57,9 +37,9 @@ public sealed class SpotifyPlaylistSourceTests
     [Fact]
     public async Task GetPlaylistAsync_MapsEmptyItems()
     {
-        var client = CreateClient("{ \"id\": \"empty\", \"name\": \"Empty\", \"tracks\": { \"items\": [] } }");
+        var client = CreateClient("{\"props\":{\"pageProps\":{\"state\":{\"data\":{\"entity\":{\"id\":\"empty\",\"name\":\"Empty\",\"trackList\":[]}}}}}}");
 
-        var playlist = await client.GetPlaylistAsync("empty", CancellationToken.None);
+        var playlist = await client.GetPlaylistAsync("https://open.spotify.com/playlist/empty", CancellationToken.None);
 
         Assert.Equal("empty", playlist.Id);
         Assert.Equal("Empty", playlist.Name);
@@ -71,9 +51,7 @@ public sealed class SpotifyPlaylistSourceTests
     {
         return new SpotifyPlaylistSource(
             new HttpClient(new StubHandler(playlistJson)),
-            NullLogger<SpotifyPlaylistSource>.Instance,
-            "client-id",
-            "client-secret");
+            NullLogger<SpotifyPlaylistSource>.Instance);
     }
 
     private sealed class StubHandler(string playlistJson) : HttpMessageHandler
@@ -82,12 +60,10 @@ public sealed class SpotifyPlaylistSourceTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            if (request.Method == HttpMethod.Post && request.RequestUri?.Host == "accounts.spotify.com")
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                return Task.FromResult(JsonResponse("{ \"access_token\": \"test-token\", \"expires_in\": 3600 }"));
-            }
-
-            return Task.FromResult(JsonResponse(playlistJson));
+                Content = new StringContent($"<html><script id=\"__NEXT_DATA__\">{playlistJson}</script></html>")
+            });
         }
 
         private static HttpResponseMessage JsonResponse(string json)

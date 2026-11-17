@@ -322,6 +322,112 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("LibraryImportCandidates");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.PlaylistImport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TotalTracks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalId");
+
+                    b.ToTable("PlaylistImports");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.PlaylistImportItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AlbumName")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArtistName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CandidatesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DownloadJobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ExternalTrackId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PlaylistImportId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("SelectedRecordingMbid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlaylistImportId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("PlaylistImportItems");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.Setting", b =>
                 {
                     b.Property<string>("Key")
@@ -447,6 +553,17 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Navigation("LibraryImport");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.PlaylistImportItem", b =>
+                {
+                    b.HasOne("MusicSync.Infrastructure.PlaylistImport", "PlaylistImport")
+                        .WithMany("Items")
+                        .HasForeignKey("PlaylistImportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PlaylistImport");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.TrackArtist", b =>
                 {
                     b.HasOne("MusicSync.Infrastructure.Artist", "Artist")
@@ -474,6 +591,11 @@ namespace MusicSync.Infrastructure.Migrations
             modelBuilder.Entity("MusicSync.Infrastructure.LibraryImport", b =>
                 {
                     b.Navigation("Candidates");
+                });
+
+            modelBuilder.Entity("MusicSync.Infrastructure.PlaylistImport", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("MusicSync.Infrastructure.Track", b =>

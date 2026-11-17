@@ -227,11 +227,12 @@ characters. Setup works only once.
 
 - The password is stored as a salted PBKDF2 hash (ASP.NET `PasswordHasher`). It cannot be read back from the database, so it is not stored in reversible form.
 - The session is an `HttpOnly`, `SameSite=Strict` cookie, valid for `Auth__SessionHours`.
+- Login and first-run setup are limited to 5 requests per five-minute window per client IP.
+- `POST /api/auth/logout-all` changes the account security stamp and invalidates all existing sessions.
 - Endpoints: `GET /api/auth/status`, `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/password`.
 
-Known limits: login attempts are not rate-limited yet, logout and password change do not
-revoke a session that was copied elsewhere before it expired, and the ListenBrainz token is
-read from the environment and not stored in the database.
+Known limits: the ListenBrainz token is read from the environment and not stored in the
+database; settings management and encrypted secret storage are not implemented yet.
 
 The API applies pending EF Core migrations on startup. New schema changes should
 be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use

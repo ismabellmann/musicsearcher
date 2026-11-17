@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MusicSync.Api.Models;
 using MusicSync.Core;
 using MusicSync.Infrastructure;
@@ -38,6 +39,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("setup")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<ApiResponse<AuthStatus>>> Setup(CredentialsRequest request, CancellationToken ct)
     {
         var error = AccountRules.ValidateUsername(request.Username) ?? AccountRules.ValidatePassword(request.Password);
@@ -61,6 +63,7 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult<ApiResponse<AuthStatus>>> Login(CredentialsRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrEmpty(request.Password))
@@ -116,12 +119,27 @@ public sealed class AuthController : ControllerBase
             new AuthStatus(true, true, User.Identity?.Name)));
     }
 
+    [HttpPost("logout-all")]
+    public async Task<ActionResult<ApiResponse<AuthStatus>>> LogoutAll(CancellationToken ct)
+    {
+        var accountId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            ? id
+            : 0;
+        if (!await _accounts.RevokeAllSessionsAsync(accountId, ct))
+            return Unauthorized(ApiResponse<AuthStatus>.Failure(StatusCodes.Status401Unauthorized, InvalidCredentials));
+
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Ok(ApiResponse<AuthStatus>.Success(
+            StatusCodes.Status200OK, "Todas las sesiones fueron revocadas.", new AuthStatus(true, false, null)));
+    }
+
     private async Task SignInAsync(UserAccount account)
     {
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, account.Id.ToString(CultureInfo.InvariantCulture)),
-            new Claim(ClaimTypes.Name, account.Username)
+            new Claim(ClaimTypes.Name, account.Username),
+            new Claim(AccountService.SecurityStampClaim, account.SecurityStamp)
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

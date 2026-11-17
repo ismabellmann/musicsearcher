@@ -75,6 +75,20 @@ public sealed class ListenBrainzClientTests
         Assert.Empty(results);
     }
 
+    [Fact]
+    public async Task TopRecordingsForArtistAsync_RetriesServerFailureAndReturnsResult()
+    {
+        var handler = new RetryHandler();
+        var client = new ListenBrainzClient(
+            new HttpClient(handler),
+            NullLogger<ListenBrainzClient>.Instance);
+
+        var results = await client.TopRecordingsForArtistAsync(Guid.NewGuid(), 10, CancellationToken.None);
+
+        Assert.Single(results);
+        Assert.Equal(3, handler.RequestCount);
+    }
+
     private static ListenBrainzClient CreateClient(string json)
     {
         return new ListenBrainzClient(
@@ -91,6 +105,27 @@ public sealed class ListenBrainzClientTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody)
+            });
+        }
+    }
+
+    private sealed class RetryHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            if (RequestCount < 3)
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"payload\":{\"recordings\":[{\"recording_mbid\":\"11111111-1111-1111-1111-111111111111\",\"recording_name\":\"Recovered\"}]}}")
             });
         }
     }

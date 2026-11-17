@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using MusicSync.Core;
 using MusicSync.Core.Interfaces;
@@ -19,9 +20,8 @@ public class MusicBrainzClient : IMetadataProvider
     private readonly MusicBrainzRequestGate _gate;
 
     // In-memory cache for metadata (rarely changes, TTL of days)
-    private readonly Dictionary<(string requestKey, DateTime timestamp), string> _cache
-        = new();
-    private const double CacheTtlDays = 7.0;
+    private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromDays(7);
 
     public MusicBrainzClient(
         HttpClient httpClient,
@@ -45,12 +45,11 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchTracksAsync(string query, CancellationToken ct)
     {
-        var cacheKey = ("search-tracks:" + query, DateTime.UtcNow);
-        if (_cache.TryGetValue(cacheKey, out var cachedResult) && IsCacheValid(cachedResult))
+        var cacheKey = "search-tracks:" + NormalizeQuery(query);
+        if (TryGetCached(cacheKey, out var cachedResult))
         {
             _logger.LogDebug("Cache hit for track search: {Query}", query);
-            // Deserialize cached result - simplified for this stub
-            return System.Array.Empty<TrackInfo>();
+            return ParseTrackSearchResponse(cachedResult);
         }
 
         _logger.LogInformation("Searching MusicBrainz tracks: {Query}", query);
@@ -59,7 +58,7 @@ public class MusicBrainzClient : IMetadataProvider
         var results = ParseTrackSearchResponse(content);
 
         // Cache the result
-        _cache[cacheKey] = content;
+        PutCached(cacheKey, content);
 
         return results;
     }
@@ -69,13 +68,17 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchAlbumsAsync(string query, CancellationToken ct)
     {
+        var cacheKey = "search-albums:" + NormalizeQuery(query);
+        if (TryGetCached(cacheKey, out var cachedResult))
+            return ParseAlbumSearchResponse(cachedResult);
+
         _logger.LogInformation("Searching MusicBrainz albums: {Query}", query);
 
         var content = await GetContentAsync(BuildSearchUri("release", query), "album search", notFoundIsNull: false, ct) ?? string.Empty;
         var results = ParseAlbumSearchResponse(content);
 
         // Cache the result
-        _cache[("search-albums:" + query, DateTime.UtcNow)] = content;
+        PutCached(cacheKey, content);
 
         return results;
     }
@@ -85,13 +88,17 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<IReadOnlyList<TrackInfo>> SearchArtistsAsync(string query, CancellationToken ct)
     {
+        var cacheKey = "search-artists:" + NormalizeQuery(query);
+        if (TryGetCached(cacheKey, out var cachedResult))
+            return ParseArtistSearchResponse(cachedResult);
+
         _logger.LogInformation("Searching MusicBrainz artists: {Query}", query);
 
         var content = await GetContentAsync(BuildSearchUri("artist", query), "artist search", notFoundIsNull: false, ct) ?? string.Empty;
         var results = ParseArtistSearchResponse(content);
 
         // Cache the result
-        _cache[("search-artists:" + query, DateTime.UtcNow)] = content;
+        PutCached(cacheKey, content);
 
         return results;
     }
@@ -101,8 +108,8 @@ public class MusicBrainzClient : IMetadataProvider
     /// </summary>
     public async Task<AlbumDetail?> GetAlbumAsync(Guid releaseGroupMbid, CancellationToken ct)
     {
-        var cacheKey = ("album-detail:" + releaseGroupMbid, DateTime.UtcNow);
-        if (_cache.TryGetValue(cacheKey, out var cachedAlbum) && IsCacheValid(cachedAlbum))
+        var cacheKey = "album-detail:" + releaseGroupMbid.ToString("D");
+        if (TryGetCached(cacheKey, out var cachedAlbum))
         {
             _logger.LogDebug("Cache hit for album detail: {Mbid}", releaseGroupMbid);
             return ParseAlbumDetailResponse(cachedAlbum);
@@ -117,7 +124,7 @@ public class MusicBrainzClient : IMetadataProvider
         var album = ParseAlbumDetailResponse(content);
 
         // Cache the result for 7 days
-        _cache[cacheKey] = content;
+        PutCached(cacheKey, content);
 
         return album;
     }
@@ -137,7 +144,7 @@ public class MusicBrainzClient : IMetadataProvider
         var track = ParseIsrcLookupResponse(content);
 
         // Cache the result
-        _cache[("isrc:" + isrc, DateTime.UtcNow)] = content;
+        PutCached("isrc:" + NormalizeQuery(isrc), content);
 
         return track;
     }
@@ -212,12 +219,28 @@ public class MusicBrainzClient : IMetadataProvider
 
     private static TimeSpan BackoffDelay(int attempt) => TimeSpan.FromSeconds(Math.Pow(2, attempt));
 
-    private bool IsCacheValid(string cachedContent)
+    private bool TryGetCached(string key, out string content)
     {
-        // Simplified: assume cached content is valid if not too old
-        // In production, would check timestamps embedded in cached data
-        return true;
+        if (_cache.TryGetValue(key, out var entry))
+        {
+            if (DateTime.UtcNow - entry.CreatedAt <= CacheTtl)
+            {
+                content = entry.Content;
+                return true;
+            }
+            _cache.TryRemove(key, out _);
+        }
+
+        content = string.Empty;
+        return false;
     }
+
+    private void PutCached(string key, string content) =>
+        _cache[key] = new CacheEntry(content, DateTime.UtcNow);
+
+    private static string NormalizeQuery(string value) => value.Trim();
+
+    private sealed record CacheEntry(string Content, DateTime CreatedAt);
 
     private System.Uri BuildSearchUri(string resource, string query)
     {

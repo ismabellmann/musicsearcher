@@ -9,6 +9,7 @@ namespace MusicSync.Infrastructure;
 /// </summary>
 public sealed class AccountService
 {
+    public const string SecurityStampClaim = "musicsync.security_stamp";
     private static readonly SemaphoreSlim SetupLock = new(1, 1);
 
     private readonly MusicSyncDbContext _db;
@@ -33,7 +34,11 @@ public sealed class AccountService
             if (await IsSetupCompleteAsync(ct))
                 return null;
 
-            var account = new UserAccount { Username = username.Trim() };
+            var account = new UserAccount
+            {
+                Username = username.Trim(),
+                SecurityStamp = CreateSecurityStamp()
+            };
             account.PasswordHash = _hasher.HashPassword(account, password);
             _db.UserAccounts.Add(account);
             await _db.SaveChangesAsync(ct);
@@ -74,7 +79,21 @@ public sealed class AccountService
             return false;
 
         account.PasswordHash = _hasher.HashPassword(account, newPassword);
+        account.SecurityStamp = CreateSecurityStamp();
         await _db.SaveChangesAsync(ct);
         return true;
     }
+
+    public async Task<bool> RevokeAllSessionsAsync(int accountId, CancellationToken ct)
+    {
+        var account = await _db.UserAccounts.FirstOrDefaultAsync(item => item.Id == accountId, ct);
+        if (account is null)
+            return false;
+
+        account.SecurityStamp = CreateSecurityStamp();
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private static string CreateSecurityStamp() => Guid.NewGuid().ToString("N");
 }

@@ -20,7 +20,8 @@ public static class MusicSyncDatabaseMigrator
     private static readonly Dictionary<string, string[]> MigrationOnlyColumns = new(StringComparer.Ordinal)
     {
         ["DownloadJobs"] = new[] { "NextAttemptAt", "AutomaticRetries" },
-        ["Tracks"] = new[] { "SourceUrl", "ReleaseGroupMbid", "Year" }
+        ["Tracks"] = new[] { "SourceUrl", "ReleaseGroupMbid", "Year" },
+        ["UserAccounts"] = new[] { "SecurityStamp" }
     };
 
     public static async Task MigrateAsync(MusicSyncDbContext db, CancellationToken ct = default)

@@ -21,6 +21,8 @@ public class ListenBrainzClient : IPopularityProvider
     private readonly string? _userToken;
     private readonly TimeSpan _rateInterval = TimeSpan.FromMilliseconds(200); // ~5 rps max
     private DateTime _lastRequestTime = DateTime.MinValue;
+    private readonly SemaphoreSlim _rateLock = new(1, 1);
+    private const int MaxAttempts = 3;
 
     public ListenBrainzClient(
         HttpClient httpClient,
@@ -44,46 +46,86 @@ public class ListenBrainzClient : IPopularityProvider
     /// </summary>
     public async Task<IReadOnlyList<RankedRecording>> TopRecordingsForArtistAsync(Guid artistMbid, int count, CancellationToken ct)
     {
-        await RateLimitAsync();
-
         _logger.LogInformation("Fetching ListenBrainz top recordings for artist: {Mbid}", artistMbid);
 
+        for (var attempt = 1; ; attempt++)
+        {
+            await RateLimitAsync(ct);
+            try
+            {
+                var requestUri = BuildArtistTopUri(artistMbid, count);
+                using var response = await _httpClient.GetAsync(requestUri, ct);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    return System.Array.Empty<RankedRecording>();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (IsRetryable(response.StatusCode) && attempt < MaxAttempts)
+                    {
+                        var delay = RetryAfterDelay(response) ?? BackoffDelay(attempt);
+                        _logger.LogWarning(
+                            "ListenBrainz returned {StatusCode}; attempt {Attempt} of {MaxAttempts} in {Delay}.",
+                            (int)response.StatusCode, attempt, MaxAttempts, delay);
+                        await Task.Delay(delay, ct);
+                        continue;
+                    }
+
+                    throw new MetadataUnavailableException("ListenBrainz top recordings", (int)response.StatusCode);
+                }
+
+                var content = await response.Content.ReadAsStringAsync(ct);
+                var recordings = ParseTopRecordingsResponse(content);
+
+                return recordings.Take(count).ToList();
+            }
+            catch (HttpRequestException ex) when (attempt < MaxAttempts)
+            {
+                var delay = BackoffDelay(attempt);
+                _logger.LogWarning(ex, "ListenBrainz request failed; attempt {Attempt} of {MaxAttempts} in {Delay}.", attempt, MaxAttempts, delay);
+                await Task.Delay(delay, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new MetadataUnavailableException("ListenBrainz top recordings", null, ex);
+            }
+        }
+    }
+
+    private async Task RateLimitAsync(CancellationToken ct)
+    {
+        await _rateLock.WaitAsync(ct);
         try
         {
-            var requestUri = BuildArtistTopUri(artistMbid, count);
-            var response = await _httpClient.GetAsync(requestUri, ct);
+            var timeSinceLast = DateTime.UtcNow - _lastRequestTime;
+            if (timeSinceLast < _rateInterval)
+                await Task.Delay(_rateInterval - timeSinceLast, ct);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("ListenBrainz API returned {StatusCode} for artist {Mbid}",
-                    response.StatusCode, artistMbid);
-                return System.Array.Empty<RankedRecording>();
-            }
-
-            var content = await response.Content.ReadAsStringAsync(ct);
-            var recordings = ParseTopRecordingsResponse(content);
-
-            // Take only the requested count
-            return recordings.Take(count).ToList();
+            _lastRequestTime = DateTime.UtcNow;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        finally
         {
-            _logger.LogError(ex, "ListenBrainz top recordings failed for artist: {Mbid}", artistMbid);
-            return System.Array.Empty<RankedRecording>();
+            _rateLock.Release();
         }
     }
 
-    private async Task RateLimitAsync()
+    private static bool IsRetryable(System.Net.HttpStatusCode statusCode) =>
+        statusCode == System.Net.HttpStatusCode.TooManyRequests || (int)statusCode >= 500;
+
+    private static TimeSpan? RetryAfterDelay(HttpResponseMessage response)
     {
-        // Token bucket rate limiter: ~5 requests per second max
-        var timeSinceLast = DateTime.UtcNow - _lastRequestTime;
-        if (timeSinceLast < _rateInterval)
-        {
-            await Task.Delay(_rateInterval - timeSinceLast, CancellationToken.None);
-        }
-
-        _lastRequestTime = DateTime.UtcNow;
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is { } delta)
+            return ClampDelay(delta);
+        if (retryAfter?.Date is { } date)
+            return ClampDelay(date - DateTimeOffset.UtcNow);
+        return null;
     }
+
+    private static TimeSpan BackoffDelay(int attempt) => TimeSpan.FromSeconds(Math.Min(60, Math.Pow(2, attempt)));
+
+    private static TimeSpan ClampDelay(TimeSpan delay) =>
+        delay < TimeSpan.Zero ? TimeSpan.Zero : delay > TimeSpan.FromSeconds(60) ? TimeSpan.FromSeconds(60) : delay;
 
     private System.Uri BuildArtistTopUri(Guid artistMbid, int count)
     {

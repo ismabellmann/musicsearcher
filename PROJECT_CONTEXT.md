@@ -191,7 +191,7 @@ Use **MusicBrainz IDs (MBIDs)** as canonical identifiers wherever possible.
 - Handle `503` and `Retry-After` with backoff.
 - Implementation status: a singleton `MusicBrainzRequestGate` paces every MusicBrainz request in the process to one per second. `429` and `503` responses are retried up to three attempts, honouring `Retry-After` (capped at 60 s) and otherwise backing off 2 s and 4 s. Transport failures are retried the same way. When MusicBrainz still cannot answer, the client throws `MetadataUnavailableException`, and the API returns `503` with a Spanish message. Failures are no longer reported as empty results.
 - Search uses the MusicBrainz search endpoints: `/ws/2/recording` for tracks, `/ws/2/release` for albums, and `/ws/2/artist` for artists. Previously tracks used `/ws/2/track`, which is not a search endpoint, and the resulting 404 was hidden as an empty result.
-- Known issue: the metadata cache is still ineffective because its keys include timestamps, so cached responses are never read.
+- The metadata cache uses stable request keys and a seven-day in-memory TTL. It is process-local; persistent caching remains future work.
 
 ### 8.3 Playlists
 - Accept public Spotify playlist URLs or IDs only.
@@ -317,8 +317,8 @@ Implementation status: under `/api/downloads`, create (with optional `provider`)
 - **Path safety:** the library root is fixed by config. Any user-supplied path component MUST be sanitized, then the final path MUST be `Path.GetFullPath`-resolved and verified to start with the library root. Applies to download, delete and read-back. Reject `..`, absolute paths, and reserved names.
 - **No shell injection:** never build command lines by string concatenation. Use `ProcessStartInfo.ArgumentList`. Never pass user input as a flag (use `--` before positional args; validate URLs/IDs).
 - **Secrets:** (Spotify client secret, ListenBrainz token) stored encrypted via ASP.NET Data Protection, write-only through the API, never logged, never returned.
-- **Auth:** passwords hashed with Argon2id or ASP.NET `PasswordHasher`. Cookie auth with `HttpOnly`, `Secure`, `SameSite=Strict`. Until setup is complete, all routes except health and setup return 403. Implemented: ASP.NET `PasswordHasher` (PBKDF2, salted); session cookie `HttpOnly` and `SameSite=Strict`, with `Secure` controlled by `Auth__SecureCookies` (default off so plain HTTP works); cookie-protection keys persisted under `Config__Dir`; first-run 403 gate. Not implemented: login rate limiting, server-side session revocation, encryption of the ListenBrainz and Spotify secrets, and inbound request size limits.
-- **Inbound hardening:** rate limiting, request size limits, strict CORS (default: none), HTTPS redirection and HSTS. Not implemented yet. The owner accepted plain HTTP for the current private deployment; HTTPS remains selectable through `Auth__SecureCookies` and the hosting configuration.
+- **Auth:** passwords hashed with Argon2id or ASP.NET `PasswordHasher`. Cookie auth with `HttpOnly`, `Secure`, `SameSite=Strict`. Until setup is complete, all routes except health and setup return 403. Implemented: ASP.NET `PasswordHasher` (PBKDF2, salted); session cookie `HttpOnly` and `SameSite=Strict`, with `Secure` controlled by `Auth__SecureCookies` (default off so plain HTTP works); cookie-protection keys persisted under `Config__Dir`; first-run 403 gate; five-per-five-minutes login/setup rate limit per client IP; security-stamp session revocation through `POST /api/auth/logout-all`. Settings and encrypted provider-secret storage remain future work.
+- **Inbound hardening:** authentication rate limiting and a 1 MiB request body limit are implemented; strict CORS remains disabled by default. HTTPS redirection, HSTS, and broader request-specific size limits remain future work. The owner accepted plain HTTP for the current private deployment; HTTPS remains selectable through `Auth__SecureCookies` and the hosting configuration.
 - **Outbound hardening:** allowlist hosts for cover-art fetching (e.g. `coverartarchive.org`, `archive.org`). Reject others (SSRF protection).
 - **Docker:** run as non-root, mount only the library and config volumes.
 
@@ -363,7 +363,7 @@ Implementation status of this list:
 Progress below reflects the current repository implementation. A passing test/build validates only the exercised code paths; it does not imply the remaining milestone features are complete.
 
 1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, SQLite registration, metadata-client DI, and EF Core migrations are present. The API applies pending migrations at startup and safely baselines a matching legacy `EnsureCreated` SQLite schema. Startup validates configuration (MusicBrainz identity, matching thresholds, audio format, worker concurrency, retry settings). ✅ Implemented - first-run setup, authenticated cookie sessions, health endpoint, and configuration validation are complete. HTTPS/HSTS enforcement remains optional for the current plain-HTTP private deployment; inbound hardening is tracked in §11.
-2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - a shared request gate paces MusicBrainz at one request per second process-wide, 429/503 responses are retried with Retry-After support, and failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Cache correctness (the cache keys currently include timestamps, so entries are never read), ListenBrainz retries, error/response consistency across all endpoints, and broader endpoint tests remain.
+2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - MusicBrainz uses a reusable seven-day in-memory cache and a shared one-request-per-second gate; MusicBrainz and ListenBrainz retry transient failures with `Retry-After` support, and provider failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Persistent metadata caching, broader provider error tests, and remaining resilience work are future improvements.
 3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - album layout (§8.6), active-work cancellation, and SSE.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
 5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
@@ -409,11 +409,19 @@ The next follow-up is live validation against several public page variants and a
 
 Deployment remains intentionally deferred until all application milestones, UI, and hardening are complete.
 
+### Completed slice: security and provider reliability baseline
+
+- MusicBrainz responses now use stable seven-day in-memory cache keys and preserve the global one-request-per-second gate.
+- ListenBrainz retries transient HTTP failures with bounded backoff and `Retry-After`; exhausted provider failures use `MetadataUnavailableException` and the API's 503 response path.
+- Authentication setup/login are rate-limited to five requests per five-minute window per client IP. `POST /api/auth/logout-all` rotates the account security stamp and invalidates existing cookies.
+- API request bodies are limited to 1 MiB, baseline security headers are emitted, and library path resolution rejects existing symlink/reparse-point traversal.
+- Remaining security work: encrypted settings/secrets, endpoint-specific request limits, HTTPS/HSTS validation, and broader inbound hardening.
+
 The application staging directory defaults to `/music/.musicsync-staging` in the image so the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip
 that directory.
 
-Remaining after this slice: album layout, analytics, settings, UI, security hardening, and final deployment verification.
+Remaining after this slice: album layout, analytics, settings, UI, targeted security follow-ups, and final deployment verification.
 
 ## 15. Open questions (ask the owner before assuming)
 

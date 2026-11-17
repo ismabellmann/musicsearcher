@@ -31,6 +31,28 @@ public class LibraryPathGuardTests
         var relative = LibraryPathGuard.NormalizeRelative(Root, Path.Combine(Root, "Pold", "Hideout.mp3"));
         Assert.Equal("Pold/Hideout.mp3", relative);
     }
+
+    [Fact]
+    public void RejectsExistingSymlinkInsideRoot()
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+            return;
+
+        var root = Path.Combine(Path.GetTempPath(), "musicsync-symlink-" + Guid.NewGuid().ToString("N"));
+        var outside = Path.Combine(Path.GetTempPath(), "musicsync-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(outside);
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(root, "linked"), outside);
+            Assert.ThrowsAny<ArgumentException>(() => LibraryPathGuard.ResolveRelativePath(root, "linked/file.mp3"));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+            Directory.Delete(outside, true);
+        }
+    }
 }
 
 public class TrackDisplayTests

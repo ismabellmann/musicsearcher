@@ -80,4 +80,20 @@ public sealed class AccountServiceTests
         Assert.Null(await accounts.VerifyAsync("owner", Password, CancellationToken.None));
         Assert.NotNull(await accounts.VerifyAsync("owner", newPassword, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task RevokeAllSessions_ChangesSecurityStamp()
+    {
+        var (connection, db) = await OpenAsync();
+        await using var _ = connection;
+        await using var __ = db;
+        var accounts = new AccountService(db);
+        var account = await accounts.CreateInitialAccountAsync("owner", Password, CancellationToken.None);
+        var original = account!.SecurityStamp;
+
+        Assert.True(await accounts.RevokeAllSessionsAsync(account.Id, CancellationToken.None));
+
+        var updated = await db.UserAccounts.SingleAsync();
+        Assert.NotEqual(original, updated.SecurityStamp);
+    }
 }

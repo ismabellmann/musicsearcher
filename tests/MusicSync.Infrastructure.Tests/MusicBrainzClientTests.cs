@@ -118,6 +118,20 @@ public sealed class MusicBrainzClientTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task SearchTracksAsync_ReusesFreshCacheEntry()
+    {
+        var handler = new CountingHandler("{ \"recordings\": [] }");
+        var client = new MusicBrainzClient(
+            new HttpClient(handler),
+            NullLogger<MusicBrainzClient>.Instance);
+
+        await client.SearchTracksAsync("same query", CancellationToken.None);
+        await client.SearchTracksAsync("same query", CancellationToken.None);
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
     private static MusicBrainzClient CreateClient(string json)
     {
         var handler = new StubHandler(json);
@@ -131,6 +145,20 @@ public sealed class MusicBrainzClientTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody)
+            });
+        }
+    }
+
+    private sealed class CountingHandler(string responseBody) : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody)

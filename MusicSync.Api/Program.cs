@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using MusicSync.Api.Models;
@@ -12,8 +13,12 @@ using MusicSync.Core;
 using MusicSync.Core.Interfaces;
 using MusicSync.Infrastructure;
 using MusicSync.Worker;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 1_048_576);
 
 builder.WebHost.UseUrls(builder.Configuration["ASPNETCORE_URLS"] ?? "http://localhost:5000");
 
@@ -112,6 +117,20 @@ builder.Services.AddControllers()
                 "La solicitud no es válida."));
     });
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+
 builder.Services.AddHttpClient<IMetadataProvider, MusicBrainzClient>();
 builder.Services.AddHttpClient<IPopularityProvider, ListenBrainzClient>();
 builder.Services.AddHttpClient("Spotify");
@@ -150,6 +169,24 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
         };
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var accountId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            var stamp = context.Principal?.FindFirstValue(AccountService.SecurityStampClaim);
+            if (!int.TryParse(accountId, out var id) || stamp is null)
+            {
+                context.RejectPrincipal();
+                return;
+            }
+
+            var db = context.HttpContext.RequestServices.GetRequiredService<MusicSyncDbContext>();
+            var current = await db.UserAccounts.AsNoTracking()
+                .Where(account => account.Id == id)
+                .Select(account => account.SecurityStamp)
+                .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
+            if (current is null || !string.Equals(current, stamp, StringComparison.Ordinal))
+                context.RejectPrincipal();
+        };
     });
 builder.Services.AddAuthorization(options =>
 {
@@ -183,7 +220,7 @@ app.Use(async (context, next) =>
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
         await context.Response.WriteAsJsonAsync(ApiResponse<object?>.Failure(
             StatusCodes.Status503ServiceUnavailable,
-            "MusicBrainz no está disponible en este momento. Inténtelo de nuevo más tarde."));
+            "El proveedor de metadatos no está disponible en este momento. Inténtelo de nuevo más tarde."));
     }
 });
 
@@ -210,6 +247,14 @@ app.Use(async (context, next) =>
 });
 
 app.UseRouting();
+app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    await next(context);
+});
 app.UseAuthentication();
 app.UseAuthorization();
 

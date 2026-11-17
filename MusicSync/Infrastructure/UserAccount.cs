@@ -17,5 +17,9 @@ public class UserAccount
     public string PasswordHash { get; set; } = string.Empty;
 
     [Required]
+    [MaxLength(64)]
+    public string SecurityStamp { get; set; } = string.Empty;
+
+    [Required]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

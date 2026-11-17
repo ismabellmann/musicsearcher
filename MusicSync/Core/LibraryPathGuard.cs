@@ -22,7 +22,30 @@ public static class LibraryPathGuard
         if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             throw new ArgumentException("La ruta queda fuera de la biblioteca.", nameof(relativePath));
 
+        RejectReparsePoints(root, fullPath, relativePath);
+
         return fullPath;
+    }
+
+    private static void RejectReparsePoints(string root, string fullPath, string relativePath)
+    {
+        var current = root;
+        while (true)
+        {
+            if ((File.Exists(current) || Directory.Exists(current))
+                && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new ArgumentException("La ruta no puede atravesar enlaces simbólicos o puntos de montaje reencaminados.", nameof(relativePath));
+
+            if (string.Equals(current, fullPath, StringComparison.Ordinal))
+                break;
+
+            var next = Path.Combine(current, Path.GetRelativePath(current, fullPath).Split(Path.DirectorySeparatorChar)[0]);
+            if (string.Equals(next, current, StringComparison.Ordinal))
+                break;
+            current = next;
+            if (!Directory.Exists(current) && !File.Exists(current))
+                break;
+        }
     }
 
     public static string NormalizeRelative(string libraryRoot, string fullPath)

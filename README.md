@@ -35,7 +35,7 @@ The planned workflow is:
 - SHA-256 and metadata-based deduplication foundations.
 - Server-Sent Events (SSE) planned for live progress updates.
 - External integrations kept behind interfaces where practical.
-- Docker packaging planned for the complete audio toolchain.
+- Docker packaging is available for TrueNAS through GHCR (`linux/amd64`).
 
 ## Technology
 
@@ -180,6 +180,43 @@ Auth__SecureCookies=true
 
 Or let TrueNAS or a reverse proxy terminate TLS and keep the container on HTTP.
 The HTTPS settings above have not been tested end to end yet.
+
+### Docker on TrueNAS
+
+The published image is `ghcr.io/ismabellmann/musicsearcher:latest`. It listens on
+container port `28080` and runs as UID/GID `568:568`, the TrueNAS apps user. The image
+contains ffmpeg/ffprobe, Deno, and pinned yt-dlp `2026.10.26`.
+
+Create the persistent config directory on the NAS before starting the app:
+
+```bash
+mkdir -p /mnt/tank/Servidores/musicsync
+chown -R 568:568 /mnt/tank/Servidores/musicsync
+```
+
+The music dataset must also grant UID/GID 568 read and write access because downloads,
+embedded covers, and the same-filesystem staging directory are written below `/music`.
+The recommended mounts and port are:
+
+| Container | Host |
+|---|---|
+| `/music` | `/mnt/tank/ftp/musica` |
+| `/config` | `/mnt/tank/Servidores/musicsync` |
+| `28080` | `28080` |
+
+The repository includes [`compose.yaml`](compose.yaml) with these values. For a TrueNAS
+custom app, use the same image, port, user, environment variables, and mounts. On first
+start, open `http://NAS_IP:28080` and create the single service account. Set the
+`MusicBrainz__UserAgent` environment variable to a contact address or URL of your own.
+
+The database and cookie-protection keys live in `/config`; back up that directory before
+upgrades. The GHCR package must be public for an unauthenticated TrueNAS pull, or configure
+registry credentials in the app. To update, pull the new image and recreate the container;
+the database is upgraded by the application at startup.
+
+The Docker image is currently built and published for `linux/amd64` by GitHub Actions.
+yt-dlp is intentionally pinned; update its version and checksum in `Dockerfile`, verify the
+image, then publish a new image tag before upgrading the NAS.
 
 ### First run and sign-in
 

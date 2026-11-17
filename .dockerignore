@@ -1,0 +1,16 @@
+.git
+.github
+**/bin
+**/obj
+config
+data
+tracks
+library
+*.db
+*.db-shm
+*.db-wal
+Dockerfile*
+compose*.yml
+README.md
+PROJECT_CONTEXT.md
+tests

@@ -94,6 +94,23 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task Scan_SkipsStagingDirectoryInsideTheLibrary()
+    {
+        var staging = Path.Combine(_root, ".musicsync-staging");
+        Directory.CreateDirectory(staging);
+        File.WriteAllText(Path.Combine(staging, "12.mp3"), "staged audio");
+        _options.StagingDirectory = staging;
+
+        var summary = await _service.ScanAsync(CancellationToken.None);
+
+        Assert.Equal(3, summary.Added);
+        Assert.Equal(2, summary.Unrecognized);
+        Assert.DoesNotContain(
+            await _db.LibraryImports.Select(item => item.RelativePath).ToListAsync(),
+            path => path.StartsWith(".musicsync-staging/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Identify_StoresRankedCandidates_WithoutChangingTheLibrary()
     {
         await _service.ScanAsync(CancellationToken.None);

@@ -1,0 +1,22 @@
+services:
+  musicsync:
+    image: ghcr.io/ismabellmann/musicsearcher:latest
+    container_name: musicsync
+    restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "28080:28080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:28080
+      Config__Dir: /config
+      Data__DatabasePath: /config/musicsync.db
+      Library__Root: /music
+      Library__StagingDirectory: /music/.musicsync-staging
+      Tools__Ffmpeg: /usr/bin/ffmpeg
+      Tools__Ffprobe: /usr/bin/ffprobe
+      Tools__YtDlp: /usr/local/bin/yt-dlp
+      MusicBrainz__UserAgent: "MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)"
+    volumes:
+      - /mnt/tank/ftp/musica:/music
+      - /mnt/tank/Servidores/musicsync:/config

@@ -61,6 +61,10 @@ public sealed class LibraryImportService
         if (!Directory.Exists(root))
             throw new InvalidOperationException("La carpeta de la biblioteca no existe.");
 
+        var stagingRoot = string.IsNullOrWhiteSpace(_library.StagingDirectory)
+            ? null
+            : Path.GetFullPath(_library.StagingDirectory);
+
         var known = new HashSet<string>(StringComparer.Ordinal);
         known.UnionWith(await _db.LibraryImports.Select(item => item.RelativePath).ToListAsync(ct));
         known.UnionWith(await _db.LibraryFiles.Select(item => item.RelativePath).ToListAsync(ct));
@@ -72,6 +76,9 @@ public sealed class LibraryImportService
         foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
             ct.ThrowIfCancellationRequested();
+            if (stagingRoot is not null && IsUnderDirectory(file, stagingRoot))
+                continue;
+
             if (!AudioExtensions.Contains(Path.GetExtension(file)))
                 continue;
 
@@ -118,6 +125,17 @@ public sealed class LibraryImportService
 
         await _db.SaveChangesAsync(ct);
         return new ScanSummary(added, alreadyKnown, unrecognized);
+    }
+
+    /// <summary>True when <paramref name="filePath"/> is inside <paramref name="directory"/>.</summary>
+    private static bool IsUnderDirectory(string filePath, string directory)
+    {
+        var prefix = Path.TrimEndingDirectorySeparator(directory) + Path.DirectorySeparatorChar;
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        return filePath.StartsWith(prefix, comparison);
     }
 
     /// <summary>

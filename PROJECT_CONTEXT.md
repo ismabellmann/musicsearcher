@@ -364,7 +364,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
 5. **M5 Playlists and top-N:** Spotify playlist and ListenBrainz top-recording parsing foundations and API endpoints are present. 🚧 In progress - end-to-end playlist track mapping and enqueue/import workflow remain.
 6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows record downloaded and imported files, and duplicate admission by recording MBID, SHA-256, and target path is implemented. Remaining: SSE and general library listing/deletion.
-7. **M7 Analytics and packaging:** ⏳ Planned - summary endpoints, Docker image (ffmpeg, yt-dlp, Deno) for the chosen TrueNAS target (port `28080`, `/music` and `/config` volumes, non-root), docs, and CI. Still needs the image-source decision (build on the NAS vs publish to GHCR) and the yt-dlp version policy (pin vs track latest).
+7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
 8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
 
 ### Recommended implementation order
@@ -383,32 +383,35 @@ Implemented and covered by tests. Final behavior:
 - Import acceptance checks the recording first, then the pre-embed SHA-256. A matching hash returns `FileAlreadyInLibrary`, mapped to `409 Conflict`, without modifying the file or embedding a cover. The final hash is recomputed after a successful embedding for the stored row.
 - No schema change was needed. Indexes on `LibraryFiles.TrackId`/`Sha256` remain optional performance work.
 
-Tests cover active-job conflicts, existing stored recordings, existing target paths, and import hash duplicates (Core 83, Infrastructure 107).
+Tests cover active-job conflicts, existing stored recordings, existing target paths, import hash duplicates, and staging exclusion (Core 83, Infrastructure 108).
 
-### Next slice: Docker packaging (M7)
+### Current slice: Docker packaging (M7)
 
 Package the verified backend for Docker on TrueNAS as a custom app:
 - Listen on port `28080`, mount the music library at `/music` and persistent config/database at `/config`.
 - Run as non-root with ffmpeg, yt-dlp, and Deno in the image.
-- Resolve the image-source choice (build on the NAS vs publish to GHCR) and the yt-dlp version policy (pin vs track latest).
+- Publish through GitHub Actions to GHCR as `ghcr.io/ismabellmann/musicsearcher:latest`; the package must be made public for anonymous TrueNAS pulls.
+- Pin yt-dlp `2026.10.26` and Deno `2.9.8` with SHA-256 verification in the Dockerfile.
 - Document the required host folders and environment variables (`Config__Dir`, `Data__DatabasePath`, `Library__Root`, and provider/tool paths).
+- Verify the image with Podman, then deploy it on the NAS and verify persistence, permissions, and upgrades.
+
+The application staging directory defaults to `/music/.musicsync-staging` in the image so the
+final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip
+that directory.
 
 Out of scope until after packaging: album layout, SSE, general library listing/deletion, bulk playlist import, and UI.
 
 ## 15. Open questions (ask the owner before assuming)
 
-- **Deployment target:** bare metal, Docker on a NAS, or both?
-
-Open deployment decisions:
-- Docker image source: build the image on the NAS or publish it to GHCR.
-- yt-dlp version policy: pin a tested version or track the latest release.
 - The host config folder `/mnt/tank/Servidores/musicsync` still has to be created on the NAS before the container can persist its database and keys.
+- The first GHCR publication must be made public, or registry credentials must be configured in TrueNAS.
+- NAS deployment and upgrade persistence still require live verification.
 
 Owner decisions already recorded:
 
 - Deployment: Docker on TrueNAS as a custom app. Container listens on port 28080 (not 8080) to avoid clashes with other projects on the host.
 - Music library host path: `/mnt/tank/ftp/musica`, mounted at `/music`. It already contains tracks that should be importable without download.
-- Config/database host path (proposed, not final): `/mnt/tank/Servidores/musicsync`, mounted at `/config`. The folder must be created on the NAS.
+- Config/database host path: `/mnt/tank/Servidores/musicsync`, mounted at `/config`. The folder must be created on the NAS and writable by UID/GID `568:568`.
 - Spotify playlists use the public-page method, without credentials.
 - Single-user service.
 - MP3 is the intended default output format.
@@ -416,6 +419,7 @@ Owner decisions already recorded:
 - `NeedsReview` jobs park without blocking later queued jobs.
 - Queue ordering is FIFO; first queue-management scope is observing/managing jobs, not batch enqueue.
 - Use EF Core migrations for future schema changes; do not use `EnsureCreated` for application startup or database upgrades.
+- Publish the Docker image to GHCR through GitHub Actions, target `linux/amd64`, pin yt-dlp `2026.10.26`, and run the container as UID/GID `568:568`.
 
 ## 16. Instructions to the AI assistant
 

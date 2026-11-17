@@ -287,6 +287,8 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | Session management |
 | GET | `/health` | Liveness |
 | POST | `/library/scan`, `/library/imports/identify` | Scan and identify existing library files (§8.9) |
+| GET | `/library`, `/library/{id}` | List and inspect stored library files |
+| DELETE | `/library/{id}` | Delete a contained library file and prune empty directories |
 | GET | `/library/imports`, `/library/imports/{id}` | List imports and inspect ranked candidates (§8.9) |
 | POST | `/library/imports/{id}/accept`, `/library/imports/{id}/reject` | Accept or discard an import match (§8.9) |
 | PUT | `/library/imports/{id}/path` | Correct an imported file's stored path (§8.9) |
@@ -302,13 +304,13 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | POST | `/downloads/{id}/approve` | Approve a `NeedsReview` candidate |
 | POST | `/downloads/{id}/cancel` | Cancel a queued or review-pending job |
 | POST | `/downloads/{id}/retry` | Requeue a failed job |
-| GET | `/events` | SSE stream of job progress |
+| GET | `/events?jobId=&after=` | Authenticated persisted SSE stream of job progress |
 | GET | `/library` | List saved files |
 | DELETE | `/library/{id}` | Delete a file and prune empty folders |
 | GET | `/analytics/summary` | Aggregates |
 | GET/POST | `/settings` | Settings (secrets write-only, never returned) |
 
-Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns a plain-text liveness message. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `password`) are implemented. Search and playlist endpoints exist. Existing-library scan/import/accept/reject/path-correction and cover backfill are implemented (§8.9); a general library list/delete is not. SSE, analytics, and settings are not implemented yet.
+Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns a plain-text liveness message. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `password`) are implemented. Search, playlist, album, and artist bulk preview/enqueue endpoints exist. Existing-library scan/import/accept/reject/path-correction, cover backfill, general library list/detail/delete, and persisted authenticated SSE events are implemented. Analytics, settings, UI, and final deployment verification remain.
 
 ## 11. Security requirements (MUST)
 
@@ -365,7 +367,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - album layout (§8.6), active-work cancellation, and SSE.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
 5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
-6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows record downloaded and imported files, and duplicate admission by recording MBID, SHA-256, and target path is implemented. Remaining: SSE and general library listing/deletion.
+6. **M6 Realtime and library:** ✅ Implemented - `LibraryFile` rows record downloaded and imported files, duplicate admission by recording MBID, SHA-256, and target path is implemented, general listing/detail/delete endpoints are available, and persisted authenticated SSE job events support replay with `Last-Event-ID`. UI integration and event retention maintenance remain.
 7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
 8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
 
@@ -398,9 +400,12 @@ Implemented without Spotify credentials:
 
 The next follow-up is live validation against several public page variants and adding explicit item-level candidate selection tests through the API.
 
-### Current slice: library management and realtime activity (M6)
+### Completed slice: library management and realtime activity (M6)
 
-Add general library listing/details/deletion and SSE activity events before the final UI and deployment verification.
+- `GET /api/library` and `GET /api/library/{id}` provide paginated metadata-safe listing/detail views with artist credits and imported/downloaded origin.
+- `DELETE /api/library/{id}` resolves paths through `LibraryPathGuard`, deletes only contained files, resets matching imported records to `Pending`, and prunes empty child directories.
+- `GET /api/events` streams persisted `DownloadJobEvent` records, supports `jobId`, `after`, and `Last-Event-ID`, sends keep-alives, and broadcasts worker/controller lifecycle changes.
+- No filesystem absolute paths are exposed. Missing files are treated as idempotent deletion cleanup.
 
 Deployment remains intentionally deferred until all application milestones, UI, and hardening are complete.
 
@@ -408,7 +413,7 @@ The application staging directory defaults to `/music/.musicsync-staging` in the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip
 that directory.
 
-Out of scope until after packaging: album layout, SSE, general library listing/deletion, bulk playlist import, and UI.
+Remaining after this slice: album layout, analytics, settings, UI, security hardening, and final deployment verification.
 
 ## 15. Open questions (ask the owner before assuming)
 

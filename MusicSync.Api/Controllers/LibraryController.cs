@@ -12,13 +12,72 @@ namespace MusicSync.Api.Controllers;
 public sealed class LibraryController : ControllerBase
 {
     private readonly LibraryImportService _imports;
+    private readonly LibraryFileService _files;
     private readonly MusicSyncDbContext _db;
 
-    public LibraryController(LibraryImportService imports, MusicSyncDbContext db)
+    public LibraryController(LibraryImportService imports, LibraryFileService files, MusicSyncDbContext db)
     {
         _imports = imports;
+        _files = files;
         _db = db;
     }
+
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<PagedResult<LibraryFileSummary>>>> ListFiles(
+        string? q,
+        string? origin,
+        int page = 1,
+        int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(origin)
+            && !string.Equals(origin, "imported", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(origin, "downloaded", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(ApiResponse<PagedResult<LibraryFileSummary>>.Failure(
+                StatusCodes.Status400BadRequest, "El origen debe ser imported o downloaded."));
+        }
+
+        var result = await _files.ListAsync(q, origin, page, pageSize, ct);
+        var data = new PagedResult<LibraryFileSummary>(
+            result.Items.Select(ToSummary).ToList(), result.Page, result.PageSize, result.TotalCount);
+        return Ok(ApiResponse<PagedResult<LibraryFileSummary>>.Success(
+            StatusCodes.Status200OK, "Archivos de la biblioteca consultados.", data));
+    }
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<ApiResponse<LibraryFileDetail>>> GetFile(int id, CancellationToken ct)
+    {
+        var file = await _files.GetAsync(id, ct);
+        return file is null
+            ? NotFound(ApiResponse<LibraryFileDetail>.Failure(StatusCodes.Status404NotFound, "No se encontró el archivo."))
+            : Ok(ApiResponse<LibraryFileDetail>.Success(StatusCodes.Status200OK, "Archivo de biblioteca consultado.", ToDetail(file)));
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteFile(int id, CancellationToken ct)
+    {
+        var outcome = await _files.DeleteAsync(id, ct);
+        return outcome switch
+        {
+            DeleteLibraryFileOutcome.Deleted => Ok(ApiResponse<object>.Success(
+                StatusCodes.Status200OK, "Archivo eliminado de la biblioteca.", new object())),
+            DeleteLibraryFileOutcome.NotFound => NotFound(ApiResponse<object>.Failure(
+                StatusCodes.Status404NotFound, "No se encontró el archivo.")),
+            _ => BadRequest(ApiResponse<object>.Failure(
+                StatusCodes.Status400BadRequest, "La ruta almacenada no corresponde a un archivo válido."))
+        };
+    }
+
+    private static LibraryFileSummary ToSummary(LibraryFileView file) => new(
+        file.Id, file.RelativePath, file.Title, file.ArtistName, file.AlbumTitle,
+        file.Format, file.SizeBytes, file.AddedAt, file.Origin);
+
+    private static LibraryFileDetail ToDetail(LibraryFileView file) => new(
+        file.Id, file.RelativePath, file.RecordingMbid, file.Title, file.ArtistName,
+        file.AlbumTitle, file.ReleaseGroupMbid, file.Year, file.Isrc, file.DurationMs,
+        file.Format, file.Bitrate, file.SizeBytes, file.Sha256, file.AddedAt,
+        file.Origin, file.SourceUrl, file.Artists);
 
     [HttpPost("scan")]
     public async Task<ActionResult<ApiResponse<ScanSummary>>> Scan(CancellationToken ct)
@@ -215,3 +274,34 @@ public sealed record LibraryImportCandidateDto(
     string? Reason,
     string Provider,
     string SourceUrl);
+
+public sealed record LibraryFileSummary(
+    int FileId,
+    string RelativePath,
+    string Title,
+    string ArtistName,
+    string? AlbumTitle,
+    string? Format,
+    long SizeBytes,
+    DateTime AddedAt,
+    string Origin);
+
+public sealed record LibraryFileDetail(
+    int FileId,
+    string RelativePath,
+    Guid RecordingMbid,
+    string Title,
+    string ArtistName,
+    string? AlbumTitle,
+    Guid? ReleaseGroupMbid,
+    int? Year,
+    string? Isrc,
+    int DurationMs,
+    string? Format,
+    int? Bitrate,
+    long SizeBytes,
+    string Sha256,
+    DateTime AddedAt,
+    string Origin,
+    string? SourceUrl,
+    IReadOnlyList<string> Artists);

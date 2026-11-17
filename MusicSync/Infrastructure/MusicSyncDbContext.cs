@@ -23,6 +23,7 @@ public class MusicSyncDbContext : DbContext
     public DbSet<UserAccount> UserAccounts { get; set; } = null!;
     public DbSet<PlaylistImport> PlaylistImports { get; set; } = null!;
     public DbSet<PlaylistImportItem> PlaylistImportItems { get; set; } = null!;
+    public DbSet<DownloadJobEvent> DownloadJobEvents { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +55,12 @@ public class MusicSyncDbContext : DbContext
         modelBuilder.Entity<PlaylistImportItem>(entity =>
         {
             entity.HasIndex(item => new { item.PlaylistImportId, item.Position }).IsUnique();
+        });
+
+        modelBuilder.Entity<DownloadJobEvent>(entity =>
+        {
+            entity.HasIndex(item => new { item.JobId, item.Id });
+            entity.HasIndex(item => item.CreatedAt);
         });
 
         modelBuilder.Entity<DownloadJobCandidate>(entity =>

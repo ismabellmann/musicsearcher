@@ -62,6 +62,8 @@ builder.Services.AddSingleton(audioOptions);
 builder.Services.AddSingleton(toolOptions);
 builder.Services.AddSingleton(new FfmpegAudioTranscoder(toolOptions, audioOptions));
 builder.Services.AddSingleton<LibraryPathResolver>();
+builder.Services.AddSingleton<JobEventHub>();
+builder.Services.AddSingleton<IJobEventPublisher, JobEventPublisher>();
 var musicBrainzOptions = builder.Configuration.GetSection("MusicBrainz").Get<MusicBrainzOptions>() ?? new MusicBrainzOptions();
 var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingOptions>() ?? new MatchingOptions();
 var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();
@@ -125,6 +127,7 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<LibraryImportService>();
+builder.Services.AddScoped<LibraryFileService>();
 builder.Services.AddScoped<PlaylistImportService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

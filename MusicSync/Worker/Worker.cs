@@ -29,6 +29,7 @@ public sealed class Worker : BackgroundService
     private readonly ICoverArtProvider _coverArt;
     private readonly LibraryOptions _library;
     private readonly RetryPolicy _retryPolicy;
+    private readonly IJobEventPublisher? _events;
 
     public Worker(
         IServiceScopeFactory scopeFactory,
@@ -40,7 +41,8 @@ public sealed class Worker : BackgroundService
         ITagWriter tagWriter,
         ICoverArtProvider coverArt,
         LibraryOptions library,
-        WorkerOptions? workerOptions = null)
+        WorkerOptions? workerOptions = null,
+        IJobEventPublisher? events = null)
     {
         var options = workerOptions ?? new WorkerOptions();
         _retryPolicy = new RetryPolicy(options.MaxAutomaticRetries, TimeSpan.FromSeconds(options.RetryBaseDelaySeconds));
@@ -54,6 +56,7 @@ public sealed class Worker : BackgroundService
         _tagWriter = tagWriter;
         _coverArt = coverArt;
         _library = library;
+        _events = events;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -137,6 +140,7 @@ public sealed class Worker : BackgroundService
             return true;
 
         var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, ct);
+        await PublishEventAsync(job.Id, "job.claimed", job.Status, "Trabajo reclamado por el worker.", ct);
 
         try
         {
@@ -161,6 +165,7 @@ public sealed class Worker : BackgroundService
 
             job.Status = DownloadJobStatus.Searching;
             await db.SaveChangesAsync(ct);
+            await PublishEventAsync(job.Id, "job.searching", job.Status, "Buscando candidatos de audio.", ct);
 
             var candidates = await provider.FindCandidatesAsync(trackInfo, MaxCandidates, ct);
             if (candidates.Count == 0)
@@ -221,6 +226,7 @@ public sealed class Worker : BackgroundService
 
             job.FinishedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            await PublishEventAsync(job.Id, StatusEventType(job.Status), job.Status, JobStatusMessage(job.Status), ct);
 
             _logger.LogInformation(
                 "Job {JobId} finished with status {Status}, source {SourceUrl}, and score {MatchScore}.",
@@ -272,6 +278,7 @@ public sealed class Worker : BackgroundService
             return true;
 
         var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, ct);
+        await PublishEventAsync(job.Id, "job.downloading", DownloadJobStatus.Downloading, "Descargando el origen seleccionado.", ct);
         string? stagedSource = null;
         string? stagedMp3 = null;
         string? movedTarget = null;
@@ -322,6 +329,7 @@ public sealed class Worker : BackgroundService
 
             job.Status = DownloadJobStatus.Tagging;
             await db.SaveChangesAsync(ct);
+            await PublishEventAsync(job.Id, "job.tagging", job.Status, "Transcodificando y escribiendo etiquetas.", ct);
 
             stagedMp3 = Path.Combine(stagingDirectory, $"{job.Id}.mp3");
             await _transcoder.TranscodeToMp3Async(stagedSource, stagedMp3, trackInfo, ct);
@@ -363,6 +371,7 @@ public sealed class Worker : BackgroundService
             job.FinishedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             movedTarget = null;
+            await PublishEventAsync(job.Id, "job.done", job.Status, "Archivo guardado en la biblioteca.", ct);
 
             _logger.LogInformation("Job {JobId} stored at {Path}.", job.Id, target);
             return true;
@@ -429,6 +438,7 @@ public sealed class Worker : BackgroundService
         job.OutputPath = existing.Path;
         job.FinishedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await PublishEventAsync(job.Id, "job.done", job.Status, $"Trabajo omitido: {job.Error}.", ct);
 
         _logger.LogInformation(
             "Job {JobId} skipped: recording already in library at {Path} ({Reason}).",
@@ -510,6 +520,36 @@ public sealed class Worker : BackgroundService
         job.FinishedAt = DateTime.UtcNow;
         job.NextAttemptAt = null;
     }
+
+    private async Task PublishEventAsync(int jobId, string type, string status, string message, CancellationToken ct)
+    {
+        if (_events is null)
+            return;
+        try
+        {
+            await _events.PublishAsync(jobId, type, status, message, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not publish event for job {JobId}.", jobId);
+        }
+    }
+
+    private static string StatusEventType(string status) => status switch
+    {
+        DownloadJobStatus.ReadyForTagging => "job.ready_for_tagging",
+        DownloadJobStatus.NeedsReview => "job.needs_review",
+        DownloadJobStatus.Failed => "job.failed",
+        _ => "job.status"
+    };
+
+    private static string JobStatusMessage(string status) => status switch
+    {
+        DownloadJobStatus.ReadyForTagging => "Candidato aceptado automáticamente.",
+        DownloadJobStatus.NeedsReview => "El trabajo requiere revisión.",
+        DownloadJobStatus.Failed => "No se encontró una coincidencia confiable.",
+        _ => $"Estado del trabajo: {status}."
+    };
 
     private sealed record ExistingLibraryFile(string Path, bool InDatabase);
 }

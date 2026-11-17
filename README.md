@@ -354,6 +354,15 @@ Queue management endpoints:
 | `POST` | `/api/downloads/{id}/approve` | Approve a `NeedsReview` candidate; the worker then downloads, tags, and stores it. |
 | `POST` | `/api/downloads/{id}/cancel` | Cancel a queued or review-pending job. Active or terminal jobs return `409 Conflict`; active provider work is not interrupted. |
 | `POST` | `/api/downloads/{id}/retry` | Requeue a failed job, preserving its attempt count and clearing its prior error and candidate. |
+| `GET` | `/api/events?jobId=123&after=42` | Authenticated SSE stream of persisted job events; `Last-Event-ID` is also supported. |
+
+Library management endpoints:
+
+| Method | Path | Behavior |
+|---|---|---|
+| `GET` | `/api/library?q=&origin=imported&page=1&pageSize=50` | Paginated library files with title, artist, album, format, size, and origin filters. |
+| `GET` | `/api/library/{id}` | Full file and track metadata, including recording MBID, hash, source, and ordered artist credits. |
+| `DELETE` | `/api/library/{id}` | Deletes the contained file, removes its `LibraryFile` row, resets an imported record to `Pending`, and prunes empty directories. |
 
 These endpoints use the same `{ "status", "msg", "data" }` response envelope.
 Manual retries currently have no configured limit; automatic transient retry

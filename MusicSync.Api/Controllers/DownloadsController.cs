@@ -13,11 +13,13 @@ public sealed class DownloadsController : ControllerBase
 {
     private readonly MusicSyncDbContext _db;
     private readonly IReadOnlyCollection<string> _providerNames;
+    private readonly IJobEventPublisher? _events;
 
-    public DownloadsController(MusicSyncDbContext db, IEnumerable<IAcquisitionProvider> providers)
+    public DownloadsController(MusicSyncDbContext db, IEnumerable<IAcquisitionProvider> providers, IJobEventPublisher? events = null)
     {
         _db = db;
         _providerNames = providers.Select(provider => provider.Name).ToList();
+        _events = events;
     }
 
     [HttpPost]
@@ -70,6 +72,8 @@ public sealed class DownloadsController : ControllerBase
         _db.DownloadJobs.Add(job);
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        if (_events is not null)
+            await _events.PublishAsync(job.Id, "job.created", job.Status, "Trabajo añadido a la cola.", ct);
 
         return Accepted(ApiResponse<DownloadJobCreated>.Success(
             StatusCodes.Status202Accepted,
@@ -222,6 +226,8 @@ public sealed class DownloadsController : ControllerBase
         }
 
         var job = await FindJobSummaryAsync(id, ct);
+        if (_events is not null)
+            await _events.PublishAsync(id, "job.approved", DownloadJobStatus.Approved, "Candidato aprobado.", ct);
         return Ok(ApiResponse<DownloadJobSummary>.Success(
             StatusCodes.Status200OK,
             "Candidato aprobado. La descarga se iniciará en la cola.",
@@ -249,6 +255,8 @@ public sealed class DownloadsController : ControllerBase
             return await ReturnUnavailableJobAsync(id, "Solo se pueden cancelar trabajos en cola o en revisión.", ct);
 
         var job = await FindJobSummaryAsync(id, ct);
+        if (_events is not null)
+            await _events.PublishAsync(id, "job.cancelled", DownloadJobStatus.Cancelled, "Trabajo cancelado por el usuario.", ct);
         return Ok(ApiResponse<DownloadJobSummary>.Success(
             StatusCodes.Status200OK,
             "Trabajo cancelado exitosamente.",
@@ -278,6 +286,8 @@ public sealed class DownloadsController : ControllerBase
             return await ReturnUnavailableJobAsync(id, "Solo se pueden reintentar trabajos fallidos.", ct);
 
         var job = await FindJobSummaryAsync(id, ct);
+        if (_events is not null)
+            await _events.PublishAsync(id, "job.retrying", DownloadJobStatus.Queued, "Trabajo reencolado.", ct);
         return Accepted(ApiResponse<DownloadJobSummary>.Success(
             StatusCodes.Status202Accepted,
             "Trabajo añadido nuevamente a la cola.",

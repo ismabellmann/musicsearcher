@@ -160,6 +160,42 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("DownloadJobCandidates");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.DownloadJobEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("JobId", "Id");
+
+                    b.ToTable("DownloadJobEvents");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.LibraryFile", b =>
                 {
                     b.Property<int>("Id")

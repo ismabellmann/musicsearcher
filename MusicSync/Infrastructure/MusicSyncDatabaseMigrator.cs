@@ -13,7 +13,7 @@ public static class MusicSyncDatabaseMigrator
     private static readonly string[] MigrationOnlyTables =
     {
         "TrackArtists", "DownloadJobCandidates", "LibraryImports", "LibraryImportCandidates",
-        "PlaylistImports", "PlaylistImportItems"
+        "PlaylistImports", "PlaylistImportItems", "DownloadJobEvents"
     };
 
     // Columns added after InitialCreate, keyed by table.

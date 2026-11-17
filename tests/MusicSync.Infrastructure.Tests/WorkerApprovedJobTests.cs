@@ -100,7 +100,7 @@ public sealed class WorkerApprovedJobTests : IDisposable
             Assert.NotNull(persisted);
             Assert.Equal("Done", persisted.Status);
             Assert.Null(persisted.Error);
-            Assert.Equal(Path.Combine(libraryRoot, "Test Artist", "Approved Song.mp3"), persisted.OutputPath);
+            Assert.Equal(Path.Combine(libraryRoot, "Test Artist", "Approved Album", "00 - Approved Song.mp3"), persisted.OutputPath);
             Assert.True(File.Exists(persisted.OutputPath));
             Assert.Equal(0.75f, persisted.MatchScore!.Value, 3);
 
@@ -108,7 +108,7 @@ public sealed class WorkerApprovedJobTests : IDisposable
             {
                 var db = scope.ServiceProvider.GetRequiredService<MusicSyncDbContext>();
                 var libraryFile = await db.LibraryFiles.AsNoTracking().SingleAsync();
-                Assert.Equal(Path.Combine("Test Artist", "Approved Song.mp3"), libraryFile.RelativePath);
+                Assert.Equal(Path.Combine("Test Artist", "Approved Album", "00 - Approved Song.mp3"), libraryFile.RelativePath);
                 Assert.Equal("mp3", libraryFile.Format);
                 Assert.Equal(64, libraryFile.Sha256.Length);
             }

@@ -30,6 +30,7 @@ public sealed class Worker : BackgroundService
     private readonly LibraryOptions _library;
     private readonly RetryPolicy _retryPolicy;
     private readonly IJobEventPublisher? _events;
+    private readonly JobCancellationRegistry? _cancellations;
 
     public Worker(
         IServiceScopeFactory scopeFactory,
@@ -42,7 +43,8 @@ public sealed class Worker : BackgroundService
         ICoverArtProvider coverArt,
         LibraryOptions library,
         WorkerOptions? workerOptions = null,
-        IJobEventPublisher? events = null)
+        IJobEventPublisher? events = null,
+        JobCancellationRegistry? cancellations = null)
     {
         var options = workerOptions ?? new WorkerOptions();
         _retryPolicy = new RetryPolicy(options.MaxAutomaticRetries, TimeSpan.FromSeconds(options.RetryBaseDelaySeconds));
@@ -57,6 +59,7 @@ public sealed class Worker : BackgroundService
         _coverArt = coverArt;
         _library = library;
         _events = events;
+        _cancellations = cancellations;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -140,6 +143,7 @@ public sealed class Worker : BackgroundService
             return true;
 
         var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, ct);
+        var jobCt = _cancellations?.Begin(job.Id, ct) ?? ct;
         await PublishEventAsync(job.Id, "job.claimed", job.Status, "Trabajo reclamado por el worker.", ct);
 
         try
@@ -167,7 +171,7 @@ public sealed class Worker : BackgroundService
             await db.SaveChangesAsync(ct);
             await PublishEventAsync(job.Id, "job.searching", job.Status, "Buscando candidatos de audio.", ct);
 
-            var candidates = await provider.FindCandidatesAsync(trackInfo, MaxCandidates, ct);
+            var candidates = await provider.FindCandidatesAsync(trackInfo, MaxCandidates, jobCt);
             if (candidates.Count == 0)
             {
                 Fail(job, "No matching candidates found");
@@ -237,6 +241,11 @@ public sealed class Worker : BackgroundService
 
             return true;
         }
+        catch (OperationCanceledException) when (jobCt.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            await MarkCancelledAsync(db, job.Id);
+            return true;
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
@@ -246,6 +255,10 @@ public sealed class Worker : BackgroundService
             _logger.LogError(ex, "Job {JobId} failed during candidate acquisition.", job.Id);
             await HandleFailureAsync(db, job, ex, DownloadJobStatus.Queued, "candidate acquisition", ct);
             return true;
+        }
+        finally
+        {
+            _cancellations?.End(job.Id);
         }
     }
 
@@ -278,6 +291,7 @@ public sealed class Worker : BackgroundService
             return true;
 
         var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId.Value, ct);
+        var jobCt = _cancellations?.Begin(job.Id, ct) ?? ct;
         await PublishEventAsync(job.Id, "job.downloading", DownloadJobStatus.Downloading, "Descargando el origen seleccionado.", ct);
         string? stagedSource = null;
         string? stagedMp3 = null;
@@ -316,7 +330,7 @@ public sealed class Worker : BackgroundService
 
             var downloaded = await provider.DownloadAsync(
                 new SourceCandidate { Title = track.Title, SourceUrl = job.SourceUrl },
-                ct);
+                jobCt);
 
             if (string.IsNullOrEmpty(downloaded.FilePath))
                 throw new InvalidOperationException("El proveedor no entregó un archivo de audio.");
@@ -332,10 +346,10 @@ public sealed class Worker : BackgroundService
             await PublishEventAsync(job.Id, "job.tagging", job.Status, "Transcodificando y escribiendo etiquetas.", ct);
 
             stagedMp3 = Path.Combine(stagingDirectory, $"{job.Id}.mp3");
-            await _transcoder.TranscodeToMp3Async(stagedSource, stagedMp3, trackInfo, ct);
+            await _transcoder.TranscodeToMp3Async(stagedSource, stagedMp3, trackInfo, jobCt);
 
-            var coverArt = await _coverArt.GetFrontCoverAsync(trackInfo.ReleaseGroupMbid ?? Guid.Empty, ct);
-            await _tagWriter.WriteAsync(stagedMp3, trackInfo, coverArt, ct);
+            var coverArt = await _coverArt.GetFrontCoverAsync(trackInfo.ReleaseGroupMbid ?? Guid.Empty, jobCt);
+            await _tagWriter.WriteAsync(stagedMp3, trackInfo, coverArt, jobCt);
 
             var existingAfterTagging = await FindExistingLibraryFileAsync(db, track, libraryRoot, ct);
             if (existingAfterTagging is not null)
@@ -344,7 +358,7 @@ public sealed class Worker : BackgroundService
                 return true;
             }
 
-            var target = _pathResolver.ResolveWithinRoot(libraryRoot, trackInfo, asSingle: true, ".mp3");
+            var target = _pathResolver.ResolveWithinRoot(libraryRoot, trackInfo, asSingle: UseSingleLayout(trackInfo), ".mp3");
             if (File.Exists(target))
             {
                 await MarkDuplicateAsync(db, job, new ExistingLibraryFile(target, InDatabase: false), ct);
@@ -376,6 +390,13 @@ public sealed class Worker : BackgroundService
             _logger.LogInformation("Job {JobId} stored at {Path}.", job.Id, target);
             return true;
         }
+        catch (OperationCanceledException) when (jobCt.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            if (movedTarget is not null && File.Exists(movedTarget))
+                File.Delete(movedTarget);
+            await MarkCancelledAsync(db, job.Id);
+            return true;
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
@@ -398,6 +419,7 @@ public sealed class Worker : BackgroundService
             DeleteIfExists(stagedMp3);
             if (temporaryDirectory is not null && Directory.Exists(temporaryDirectory))
                 Directory.Delete(temporaryDirectory, recursive: true);
+            _cancellations?.End(job.Id);
         }
     }
 
@@ -421,10 +443,22 @@ public sealed class Worker : BackgroundService
                 InDatabase: true);
         }
 
-        var target = _pathResolver.ResolveWithinRoot(libraryRoot, ToTrackInfo(track), asSingle: true, ".mp3");
+        var target = _pathResolver.ResolveWithinRoot(libraryRoot, ToTrackInfo(track), asSingle: UseSingleLayout(ToTrackInfo(track)), ".mp3");
         return File.Exists(target)
             ? new ExistingLibraryFile(target, InDatabase: false)
             : null;
+    }
+
+    private async Task MarkCancelledAsync(MusicSyncDbContext db, int jobId)
+    {
+        db.ChangeTracker.Clear();
+        var job = await db.DownloadJobs.SingleAsync(item => item.Id == jobId, CancellationToken.None);
+        job.Status = DownloadJobStatus.Cancelled;
+        job.Error = "Cancelado por el usuario.";
+        job.FinishedAt = DateTime.UtcNow;
+        job.NextAttemptAt = null;
+        await db.SaveChangesAsync(CancellationToken.None);
+        await PublishEventAsync(job.Id, "job.cancelled", job.Status, "Trabajo cancelado por el usuario.", CancellationToken.None);
     }
 
     private async Task MarkDuplicateAsync(
@@ -457,6 +491,8 @@ public sealed class Worker : BackgroundService
     }
 
     private static TrackInfo ToTrackInfo(Track track) => TrackCatalog.ToTrackInfo(track);
+
+    private static bool UseSingleLayout(TrackInfo track) => string.IsNullOrWhiteSpace(track.AlbumTitle);
 
     private static async Task<string> ComputeSha256Async(string path, CancellationToken ct)
     {

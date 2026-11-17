@@ -32,7 +32,13 @@ public static class DownloadJobStatus
     public static IReadOnlySet<string> Cancellable { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         Queued,
-        NeedsReview
+        Resolving,
+        Searching,
+        NeedsReview,
+        Approved,
+        Downloading,
+        Tagging,
+        ReadyForTagging
     };
 
     /// <summary>Jobs that already own the track and would duplicate work for a new enqueue.</summary>

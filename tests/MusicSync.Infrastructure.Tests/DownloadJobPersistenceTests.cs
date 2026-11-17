@@ -332,7 +332,7 @@ public sealed class DownloadJobPersistenceTests
     }
 
     [Fact]
-    public async Task CancelJob_CancelsQueuedJobAndRejectsActiveJob()
+    public async Task CancelJob_CancelsQueuedAndActiveJobs()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -354,10 +354,9 @@ public sealed class DownloadJobPersistenceTests
         Assert.NotNull(cancelledBody.Data.FinishedAt);
 
         var activeResult = await controller.Cancel(active.Id, CancellationToken.None);
-        var activeResponse = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(activeResult.Result);
+        var activeResponse = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(activeResult.Result);
         var activeBody = Assert.IsType<ApiResponse<DownloadJobSummary>>(activeResponse.Value);
-        Assert.Equal(409, activeBody.Status);
-        Assert.Contains(DownloadJobStatus.Searching, activeBody.Msg);
+        Assert.Equal(DownloadJobStatus.Cancelled, activeBody.Data!.JobStatus);
     }
 
     [Fact]

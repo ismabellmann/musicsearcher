@@ -69,6 +69,7 @@ builder.Services.AddSingleton(new FfmpegAudioTranscoder(toolOptions, audioOption
 builder.Services.AddSingleton<LibraryPathResolver>();
 builder.Services.AddSingleton<JobEventHub>();
 builder.Services.AddSingleton<IJobEventPublisher, JobEventPublisher>();
+builder.Services.AddSingleton<JobCancellationRegistry>();
 var musicBrainzOptions = builder.Configuration.GetSection("MusicBrainz").Get<MusicBrainzOptions>() ?? new MusicBrainzOptions();
 var matchingOptions = builder.Configuration.GetSection("Matching").Get<MatchingOptions>() ?? new MatchingOptions();
 var workerOptions = builder.Configuration.GetSection("Worker").Get<WorkerOptions>() ?? new WorkerOptions();

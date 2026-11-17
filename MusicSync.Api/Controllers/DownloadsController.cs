@@ -14,12 +14,18 @@ public sealed class DownloadsController : ControllerBase
     private readonly MusicSyncDbContext _db;
     private readonly IReadOnlyCollection<string> _providerNames;
     private readonly IJobEventPublisher? _events;
+    private readonly JobCancellationRegistry? _cancellations;
 
-    public DownloadsController(MusicSyncDbContext db, IEnumerable<IAcquisitionProvider> providers, IJobEventPublisher? events = null)
+    public DownloadsController(
+        MusicSyncDbContext db,
+        IEnumerable<IAcquisitionProvider> providers,
+        IJobEventPublisher? events = null,
+        JobCancellationRegistry? cancellations = null)
     {
         _db = db;
         _providerNames = providers.Select(provider => provider.Name).ToList();
         _events = events;
+        _cancellations = cancellations;
     }
 
     [HttpPost]
@@ -240,10 +246,10 @@ public sealed class DownloadsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<DownloadJobSummary>), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ApiResponse<DownloadJobSummary>>> Cancel(int id, CancellationToken ct)
     {
+        _cancellations?.Cancel(id);
         var cancelled = await _db.DownloadJobs
             .Where(job => job.Id == id
-                && (job.Status == DownloadJobStatus.Queued
-                    || job.Status == DownloadJobStatus.NeedsReview))
+                && DownloadJobStatus.Cancellable.Contains(job.Status))
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(job => job.Status, DownloadJobStatus.Cancelled)

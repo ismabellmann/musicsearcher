@@ -320,6 +320,11 @@ cover with TagLibSharp, stores the file under `Library__Root`, records a
 archive never fails the job. Tags are written only for newly acquired files;
 files already in the library are not rewritten.
 
+Output paths use `{Artist}/{Title}.mp3` for singles and
+`{Artist}/{Album}/{NN} - {Title}.mp3` when album metadata is present. Active jobs can be
+cancelled cooperatively; provider downloads, transcoding, staging files, and temporary
+provider directories are cleaned up before the job becomes `Cancelled`.
+
 Duplicate handling:
 
 - If the requested recording already has a `LibraryFile`, the request still
@@ -353,7 +358,7 @@ Queue management endpoints:
 | `GET` | `/api/downloads?status=Queued&page=1&pageSize=50` | List jobs; status is optional, page size is limited to 100. Queued results are FIFO and include queue positions. |
 | `GET` | `/api/downloads/{id}` | Get a job and its current status. |
 | `POST` | `/api/downloads/{id}/approve` | Approve a `NeedsReview` candidate; the worker then downloads, tags, and stores it. |
-| `POST` | `/api/downloads/{id}/cancel` | Cancel a queued or review-pending job. Active or terminal jobs return `409 Conflict`; active provider work is not interrupted. |
+| `POST` | `/api/downloads/{id}/cancel` | Cancel queued, review, approved, resolving, searching, downloading, tagging, or ready-for-tagging jobs. Terminal jobs return `409 Conflict`; active provider work is cancelled cooperatively. |
 | `POST` | `/api/downloads/{id}/retry` | Requeue a failed job, preserving its attempt count and clearing its prior error and candidate. |
 | `GET` | `/api/events?jobId=123&after=42` | Authenticated SSE stream of persisted job events; `Last-Event-ID` is also supported. |
 

@@ -59,6 +59,7 @@ public record AlbumDetail
     public IReadOnlyList<string>? ArtistNames { get; init; }
     public IReadOnlyList<string>? TrackTitles { get; init; }
     public IReadOnlyList<Guid>? TrackMbids { get; init; }
+    public IReadOnlyList<TrackInfo> Tracks { get; init; } = Array.Empty<TrackInfo>();
     public string? FirstReleaseDate { get; init; }
     public string? PrimaryGenre { get; init; }
     public IReadOnlyList<string>? CoverArtUrls { get; init; }

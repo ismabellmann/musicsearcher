@@ -341,6 +341,9 @@ Playlist import uses public Spotify pages and does not require Spotify credentia
    marked `Matched`; ambiguous and missing matches remain reviewable or `NoMatch`.
 3. `POST /api/playlists/{id}/enqueue` with `itemIds` and optional `selections` enqueues only
    confirmed candidates. Repeating the request does not create duplicate jobs.
+4. `POST /api/playlists/album/{mbid}/preview` previews every recording in a MusicBrainz album.
+5. `POST /api/playlists/artist/{mbid}/preview?artistName=...&count=10` previews ListenBrainz's
+   top recordings for an artist and maps them back to MusicBrainz recordings.
 
 Queue management endpoints:
 

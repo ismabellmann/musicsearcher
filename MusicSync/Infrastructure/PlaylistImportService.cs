@@ -10,6 +10,7 @@ public sealed class PlaylistImportService
     private readonly MusicSyncDbContext _db;
     private readonly IPlaylistSource _source;
     private readonly IMetadataProvider _metadata;
+    private readonly IPopularityProvider _popularity;
     private readonly IMatchScorer _scorer;
     private readonly PlaylistOptions _options;
 
@@ -18,13 +19,58 @@ public sealed class PlaylistImportService
         IPlaylistSource source,
         IMetadataProvider metadata,
         IMatchScorer scorer,
-        PlaylistOptions options)
+        PlaylistOptions options,
+        IPopularityProvider popularity)
     {
         _db = db;
         _source = source;
         _metadata = metadata;
+        _popularity = popularity;
         _scorer = scorer;
         _options = options;
+    }
+
+    public async Task<PlaylistPreviewResult?> PreviewAlbumAsync(Guid releaseGroupMbid, CancellationToken ct)
+    {
+        var album = await _metadata.GetAlbumAsync(releaseGroupMbid, ct);
+        if (album is null || album.Tracks.Count == 0)
+            return null;
+
+        var tracks = album.Tracks.Select(track => new ResolvedBulkTrack(
+            $"album-{track.RecordingMbid:N}", track.Title, track.GetArtistNamesJoined(" & "), album.Title,
+            track.DurationMs, new[] { new PlaylistCandidateDto(
+                track.RecordingMbid, track.Title, GetArtistName(track), track.AlbumTitle ?? album.Title,
+                track.ReleaseGroupMbid ?? releaseGroupMbid, track.DurationMs, 1, "album recording") }))
+            .ToList();
+        return await PersistBulkPreviewAsync($"album:{releaseGroupMbid:N}", album.Title, album.ArtistNames?.FirstOrDefault(), tracks, ct);
+    }
+
+    public async Task<PlaylistPreviewResult?> PreviewArtistAsync(
+        Guid artistMbid,
+        string artistName,
+        int count,
+        CancellationToken ct)
+    {
+        if (count <= 0 || count > _options.MaxTracks)
+            throw new ArgumentException($"El límite de canciones es de 1 a {_options.MaxTracks}.", nameof(count));
+
+        var top = await _popularity.TopRecordingsForArtistAsync(artistMbid, count, ct);
+        var tracks = new List<ResolvedBulkTrack>();
+        foreach (var recording in top)
+        {
+            var candidates = await _metadata.SearchTracksAsync(
+                $"recording:\"{EscapeQuery(recording.Title)}\" AND artist:\"{EscapeQuery(artistName)}\"", ct);
+            var match = candidates.FirstOrDefault(candidate => candidate.RecordingMbid == recording.RecordingMbid);
+            var mapped = match is null
+                ? Array.Empty<PlaylistCandidateDto>()
+                : new[] { new PlaylistCandidateDto(
+                    match.RecordingMbid, match.Title, GetArtistName(match), match.AlbumTitle,
+                    match.ReleaseGroupMbid, match.DurationMs, 1, $"ListenBrainz position {recording.Position}") };
+            tracks.Add(new ResolvedBulkTrack(
+                $"artist-{recording.RecordingMbid:N}", recording.Title, artistName, null, 0, mapped));
+        }
+
+        return await PersistBulkPreviewAsync($"artist:{artistMbid:N}", artistName, artistName, tracks, ct);
     }
 
     public async Task<PlaylistPreviewResult> PreviewAsync(string url, CancellationToken ct)
@@ -205,6 +251,49 @@ public sealed class PlaylistImportService
         return import is null ? null : ToPreview(import);
     }
 
+    private async Task<PlaylistPreviewResult> PersistBulkPreviewAsync(
+        string externalId,
+        string name,
+        string? owner,
+        IReadOnlyList<ResolvedBulkTrack> tracks,
+        CancellationToken ct)
+    {
+        var existing = await _db.PlaylistImports.Include(item => item.Items)
+            .SingleOrDefaultAsync(item => item.ExternalId == externalId, ct);
+        if (existing is not null)
+            return ToPreview(existing);
+
+        var import = new PlaylistImport
+        {
+            ExternalId = externalId,
+            SourceUrl = externalId,
+            Name = name,
+            OwnerName = owner,
+            TotalTracks = tracks.Count,
+            Status = PlaylistImportStatus.Previewed
+        };
+        for (var index = 0; index < tracks.Count; index++)
+        {
+            var track = tracks[index];
+            var best = track.Candidates.FirstOrDefault();
+            import.Items.Add(new PlaylistImportItem
+            {
+                Position = index + 1,
+                ExternalTrackId = track.ExternalId,
+                Title = track.Title,
+                ArtistName = track.ArtistName,
+                AlbumName = track.AlbumName,
+                DurationMs = track.DurationMs,
+                Status = best is null ? PlaylistImportItemStatus.NoMatch : PlaylistImportItemStatus.Matched,
+                SelectedRecordingMbid = best?.RecordingMbid,
+                CandidatesJson = JsonSerializer.Serialize(track.Candidates)
+            });
+        }
+        _db.PlaylistImports.Add(import);
+        await _db.SaveChangesAsync(ct);
+        return ToPreview(import);
+    }
+
     private PlaylistPreviewResult ToPreview(PlaylistImport import) => new(
         import.Id,
         import.ExternalId,
@@ -222,6 +311,9 @@ public sealed class PlaylistImportService
         track.Artists.Count > 0 ? track.GetArtistNamesJoined(" & ") : track.ArtistName ?? string.Empty;
 
     private sealed record PlaylistMatchCandidate(TrackInfo Track, ScoreResult Score);
+    private sealed record ResolvedBulkTrack(
+        string ExternalId, string Title, string ArtistName, string? AlbumName, int DurationMs,
+        IReadOnlyList<PlaylistCandidateDto> Candidates);
 }
 
 public sealed record PlaylistCandidateDto(

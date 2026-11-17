@@ -286,7 +286,8 @@ public class MusicBrainzClient : IMetadataProvider
             Year = ReadYear(root),
             ArtistNames = artistCredits.Select(a => a.Name).ToList(),
             TrackTitles = recordings.Select(t => t.Title).ToList(),
-            TrackMbids = recordings.Select(t => t.RecordingMbid).ToList()
+            TrackMbids = recordings.Select(t => t.RecordingMbid).ToList(),
+            Tracks = recordings
         };
     }
 

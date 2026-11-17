@@ -364,7 +364,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - a shared request gate paces MusicBrainz at one request per second process-wide, 429/503 responses are retried with Retry-After support, and failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Cache correctness (the cache keys currently include timestamps, so entries are never read), ListenBrainz retries, error/response consistency across all endpoints, and broader endpoint tests remain.
 3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - album layout (§8.6), active-work cancellation, and SSE.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
-5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, and ListenBrainz top-recording endpoints are present. 🚧 In progress - broader album/artist bulk workflows and live validation against Spotify page variations remain.
+5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
 6. **M6 Realtime and library:** 🚧 In progress - `LibraryFile` rows record downloaded and imported files, and duplicate admission by recording MBID, SHA-256, and target path is implemented. Remaining: SSE and general library listing/deletion.
 7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
 8. **M8 UI:** ⏳ Planned - minimal static frontend (Search, Activity, Library, Settings).
@@ -387,25 +387,22 @@ Implemented and covered by tests. Final behavior:
 
 Tests cover active-job conflicts, existing stored recordings, existing target paths, import hash duplicates, and staging exclusion (Core 83, Infrastructure 108).
 
-### Completed slice: public Spotify playlist preview and enqueue (M5)
+### Completed slice: playlist, album, and artist bulk preview/enqueue (M5)
 
 Implemented without Spotify credentials:
 - `POST /api/playlists/preview` resolves a public Spotify embed page, persists the playlist and its ordered tracks, and stores up to `Playlist__MaxCandidates` MusicBrainz candidates per item.
 - `GET /api/playlists/{id}` returns the persisted preview and candidate statuses (`Matched`, `NeedsReview`, `NoMatch`, or `Enqueued`).
 - `POST /api/playlists/{id}/enqueue` enqueues selected confirmed candidates, reusing normal track/job persistence and active-job duplicate protection. Repeated enqueue requests are idempotent.
+- `POST /api/playlists/album/{mbid}/preview` previews all recordings returned for a MusicBrainz release group, and `POST /api/playlists/artist/{mbid}/preview?artistName=...&count=...` previews ListenBrainz top recordings mapped back to MusicBrainz.
 - Public-page parsing currently uses Spotify's `__NEXT_DATA__` embed payload. Spotify page format changes may require parser updates.
 
-The next playlist follow-up is live validation against several public page variants and adding explicit item-level candidate selection tests through the API.
+The next follow-up is live validation against several public page variants and adding explicit item-level candidate selection tests through the API.
 
-### Current slice: deployment verification (M7)
+### Current slice: library management and realtime activity (M6)
 
-Verify and deploy the packaged backend for Docker on TrueNAS as a custom app:
-- Listen on port `28080`, mount the music library at `/music` and persistent config/database at `/config`.
-- Run as non-root with ffmpeg, yt-dlp, and Deno in the image.
-- Publish through GitHub Actions to GHCR as `ghcr.io/ismabellmann/musicsearcher:latest`; the package must be made public for anonymous TrueNAS pulls.
-- Pin yt-dlp `2026.10.26` and Deno `2.9.8` with SHA-256 verification in the Dockerfile.
-- Document the required host folders and environment variables (`Config__Dir`, `Data__DatabasePath`, `Library__Root`, and provider/tool paths).
-- The local Podman image is verified; deploy it on the NAS and verify persistence, permissions, and upgrades.
+Add general library listing/details/deletion and SSE activity events before the final UI and deployment verification.
+
+Deployment remains intentionally deferred until all application milestones, UI, and hardening are complete.
 
 The application staging directory defaults to `/music/.musicsync-staging` in the image so the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip

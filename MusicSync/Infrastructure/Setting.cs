@@ -10,6 +10,6 @@ public class Setting
     public string Key { get; set; } = string.Empty;
 
     [Required]
-    [MaxLength(500)]
+    [MaxLength(4000)]
     public string Value { get; set; } = string.Empty;
 }

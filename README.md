@@ -117,8 +117,9 @@ chmod 600 .env
 `.env` is ignored by Git. It contains plaintext environment variables, so it is **not an
 encrypted secrets store**: do not commit it, paste it into issue reports, or expose it in
 logs. The current application reads `ListenBrainz__Token` from the environment but does not
-yet persist provider secrets through the settings API. Encrypted settings storage and a
-write-only UI/API flow are planned for the next settings slice.
+yet persist provider secrets through the settings API. The settings API/UI now stores
+supported secrets encrypted with ASP.NET Data Protection and exposes only configured/not
+configured status.
 
 For local Docker/Podman use, `compose.yaml` loads `.env` automatically through `env_file`:
 
@@ -259,8 +260,9 @@ characters. Setup works only once.
 - `POST /api/auth/logout-all` changes the account security stamp and invalidates all existing sessions.
 - Endpoints: `GET /api/auth/status`, `POST /api/auth/setup`, `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/password`.
 
-Known limits: the ListenBrainz token is read from the environment and not stored in the
-database; settings management and encrypted secret storage are not implemented yet.
+Environment variables take precedence over encrypted settings, so `ListenBrainz__Token` in
+`.env` remains a deployment override. The Settings page can save a token encrypted in the
+database or generate an encrypted application secret; plaintext values are never returned.
 
 The API applies pending EF Core migrations on startup. New schema changes should
 be added as migrations in `MusicSync/Infrastructure/Migrations`; do not use

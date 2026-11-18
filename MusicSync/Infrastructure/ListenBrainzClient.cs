@@ -19,6 +19,7 @@ public class ListenBrainzClient : IPopularityProvider
     private readonly HttpClient _httpClient;
     private readonly ILogger<ListenBrainzClient> _logger;
     private readonly string? _userToken;
+    private readonly ProtectedSettingsService? _protectedSettings;
     private readonly TimeSpan _rateInterval = TimeSpan.FromMilliseconds(200); // ~5 rps max
     private DateTime _lastRequestTime = DateTime.MinValue;
     private readonly SemaphoreSlim _rateLock = new(1, 1);
@@ -28,11 +29,13 @@ public class ListenBrainzClient : IPopularityProvider
         HttpClient httpClient,
         ILogger<ListenBrainzClient> logger,
         IConfiguration? configuration = null,
-        MusicBrainzOptions? identity = null)
+        MusicBrainzOptions? identity = null,
+        ProtectedSettingsService? protectedSettings = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _userToken = configuration?["ListenBrainz:Token"];
+        _protectedSettings = protectedSettings;
 
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
 
@@ -54,6 +57,12 @@ public class ListenBrainzClient : IPopularityProvider
             try
             {
                 var requestUri = BuildArtistTopUri(artistMbid, count);
+                var token = !string.IsNullOrWhiteSpace(_userToken)
+                    ? _userToken
+                    : _protectedSettings is null ? null : await _protectedSettings.GetSecretAsync("ListenBrainzToken", ct);
+                _httpClient.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(token)
+                    ? null
+                    : new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
                 using var response = await _httpClient.GetAsync(requestUri, ct);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)

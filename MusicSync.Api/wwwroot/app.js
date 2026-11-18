@@ -94,6 +94,7 @@
     if (view === "activity") startEvents(); else stopEvents();
     if (view === "activity") loadJobs();
     if (view === "library") loadLibrary();
+    if (view === "settings") loadSettings();
   }
 
   document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => showView(button.dataset.view)));
@@ -160,6 +161,28 @@
       }));
     } catch (error) { toast(error.message); }
   }
+
+  async function loadSettings() {
+    try {
+      const settings = await api("/api/settings");
+      const hint = document.querySelector("[data-page=settings] .cards article:nth-child(2) .hint");
+      if (hint) hint.textContent = `ListenBrainz token: ${settings.listenBrainzConfigured ? "configured" : "not configured"}. Secrets are never displayed.`;
+    } catch (error) { toast(error.message); }
+  }
+
+  document.querySelector("#save-token")?.addEventListener("click", async () => {
+    const token = document.querySelector("#listenbrainz-token").value;
+    try { await api("/api/settings", { method: "PUT", body: JSON.stringify({ listenBrainzToken: token }) }); document.querySelector("#listenbrainz-token").value = ""; toast("Token status updated."); await loadSettings(); }
+    catch (error) { toast(error.message); }
+  });
+  document.querySelector("#generate-secret")?.addEventListener("click", async () => {
+    try { await api("/api/settings/secrets/generate", { method: "POST", body: JSON.stringify({ name: "ApplicationSecret" }) }); toast("Application secret generated and encrypted."); await loadSettings(); }
+    catch (error) { toast(error.message); }
+  });
+  document.querySelector("#logout-all")?.addEventListener("click", async () => {
+    try { await api("/api/auth/logout-all", { method: "POST", body: "{}" }); toast("All sessions revoked."); await showAuth(); }
+    catch (error) { toast(error.message); }
+  });
 
   document.querySelector("#playlist-preview")?.addEventListener("click", async () => {
     const url = document.querySelector("#playlist-url").value.trim();

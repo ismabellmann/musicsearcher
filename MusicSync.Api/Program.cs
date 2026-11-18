@@ -144,6 +144,7 @@ builder.Services.AddTransient<IPlaylistSource>(serviceProvider =>
 
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDirectory, "keys")));
+builder.Services.AddSingleton<ProtectedSettingsService>();
 
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<LibraryImportService>();

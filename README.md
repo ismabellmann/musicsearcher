@@ -210,6 +210,65 @@ Auth__SecureCookies=true
 Or let TrueNAS or a reverse proxy terminate TLS and keep the container on HTTP.
 The HTTPS settings above have not been tested end to end yet.
 
+### Build and run locally with Docker or Podman
+
+The Dockerfile targets `linux/amd64` and includes the complete runtime toolchain. Prepare a
+private dotenv file and local bind-mount folders:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+mkdir -p local-music local-config
+chmod 777 local-music local-config   # or grant UID/GID 568 access instead
+```
+
+Build the image from the repository root:
+
+```bash
+docker build --platform linux/amd64 -t musicsync:local .
+# Podman equivalent:
+podman build --platform linux/amd64 -t musicsync:local .
+```
+
+Run it with the same port and volume layout used by TrueNAS:
+
+```bash
+docker run -d \
+  --name musicsync \
+  --restart unless-stopped \
+  --user 568:568 \
+  --env-file .env \
+  -p 28080:28080 \
+  -v "$PWD/local-music:/music" \
+  -v "$PWD/local-config:/config" \
+  musicsync:local
+```
+
+For rootless Podman on SELinux-enabled hosts, add `:Z` to both volume mounts:
+
+```bash
+podman run -d --name musicsync --user 568:568 --env-file .env \
+  -p 28080:28080 \
+  -v "$PWD/local-music:/music:Z" \
+  -v "$PWD/local-config:/config:Z" \
+  musicsync:local
+```
+
+Check the service and view logs:
+
+```bash
+curl http://localhost:28080/api/health
+docker logs -f musicsync
+```
+
+The first visit to `http://localhost:28080` opens the setup screen. The SQLite database and
+data-protection keys are stored in `local-config`; keep that folder when replacing the
+container. Stop and remove the container without deleting those folders:
+
+```bash
+docker rm -f musicsync
+```
+
 ### Docker on TrueNAS
 
 The published image is `ghcr.io/ismabellmann/musicsearcher:latest`. It listens on

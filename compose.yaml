@@ -4,6 +4,8 @@ services:
     container_name: musicsync
     restart: unless-stopped
     user: "568:568"
+    env_file:
+      - .env
     ports:
       - "28080:28080"
     environment:

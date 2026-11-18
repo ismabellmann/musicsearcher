@@ -103,6 +103,34 @@ Settings come from environment variables or `appsettings.json`. A double undersc
 (`__`) separates nested sections, so `Library__Root` is the `Library:Root` setting.
 Relative paths resolve against the API content root. Defaults are shown below.
 
+### dotenv configuration
+
+The repository includes [`.env.example`](.env.example) as a production/Docker template.
+Create a private dotenv file before using the Compose example:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Edit .env and add the values for your deployment.
+```
+
+`.env` is ignored by Git. It contains plaintext environment variables, so it is **not an
+encrypted secrets store**: do not commit it, paste it into issue reports, or expose it in
+logs. The current application reads `ListenBrainz__Token` from the environment but does not
+yet persist provider secrets through the settings API. Encrypted settings storage and a
+write-only UI/API flow are planned for the next settings slice.
+
+For local Docker/Podman use, `compose.yaml` loads `.env` automatically through `env_file`:
+
+```bash
+docker compose up -d
+# or: podman compose up -d
+```
+
+For a TrueNAS custom app, copy the variables from `.env` into the app's environment-variable
+fields instead of mounting the development `.env` file into the container. Keep the file on
+the administration workstation with restrictive permissions.
+
 ### Server and storage
 
 | Variable | Default | Purpose |

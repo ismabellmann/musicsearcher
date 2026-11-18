@@ -316,7 +316,7 @@ Implementation status: under `/api/downloads`, create (with optional `provider`)
 
 - **Path safety:** the library root is fixed by config. Any user-supplied path component MUST be sanitized, then the final path MUST be `Path.GetFullPath`-resolved and verified to start with the library root. Applies to download, delete and read-back. Reject `..`, absolute paths, and reserved names.
 - **No shell injection:** never build command lines by string concatenation. Use `ProcessStartInfo.ArgumentList`. Never pass user input as a flag (use `--` before positional args; validate URLs/IDs).
-- **Secrets:** (Spotify client secret, ListenBrainz token) stored encrypted via ASP.NET Data Protection, write-only through the API, never logged, never returned.
+- **Secrets:** `.env.example` documents deployment variables and `.env` is ignored by Git, but dotenv values are plaintext and are not an encrypted secret store. `ListenBrainz__Token` is currently read from the environment only. Encrypted, write-only settings through the API/UI are planned for the next settings slice.
 - **Auth:** passwords hashed with Argon2id or ASP.NET `PasswordHasher`. Cookie auth with `HttpOnly`, `Secure`, `SameSite=Strict`. Until setup is complete, all routes except health and setup return 403. Implemented: ASP.NET `PasswordHasher` (PBKDF2, salted); session cookie `HttpOnly` and `SameSite=Strict`, with `Secure` controlled by `Auth__SecureCookies` (default off so plain HTTP works); cookie-protection keys persisted under `Config__Dir`; first-run 403 gate; five-per-five-minutes login/setup rate limit per client IP; security-stamp session revocation through `POST /api/auth/logout-all`. Settings and encrypted provider-secret storage remain future work.
 - **Inbound hardening:** authentication rate limiting and a 1 MiB request body limit are implemented; strict CORS remains disabled by default. HTTPS redirection, HSTS, and broader request-specific size limits remain future work. The owner accepted plain HTTP for the current private deployment; HTTPS remains selectable through `Auth__SecureCookies` and the hosting configuration.
 - **Outbound hardening:** allowlist hosts for cover-art fetching (e.g. `coverartarchive.org`, `archive.org`). Reject others (SSRF protection).
@@ -335,7 +335,7 @@ Matching__ReviewThreshold=0.50
 Matching__DurationToleranceSeconds=5
 Worker__Concurrency=1
 MusicBrainz__UserAgent=MusicSync/0.1 (https://github.com/ismabellmann/musicsearcher)  # default; use an email or URL of your own if preferred
-ListenBrainz__Token=         # optional
+ListenBrainz__Token=         # optional; use a private .env or deployment secret, never commit it
 Playlist__MaxTracks=100
 Playlist__MaxCandidates=10
 ```
@@ -343,6 +343,7 @@ Playlist__MaxCandidates=10
 Implementation status of this list:
 
 - Read by the code: `ASPNETCORE_URLS` (default `http://localhost:5000`), `Config__Dir`, `Auth__SecureCookies`, `Auth__SessionHours`, `Data__DatabasePath`, `Library__Root` (default: `tracks/` at the repository root), `Library__StagingDirectory` (default: `data/staging` under the API content root), `Library__YouTubeFallback` (default `true`), `Library__YouTubeMaxCandidates` (default `5`), `Library__EmbedCoverOnImport` (default `true`), `Acquisition__LocalSourceDirectory` (default: `tracks/`), `Audio__Quality`, `CoverArt__Enabled` (default `true`; applies to downloads, imported files and backfill), `CoverArt__MaxBytes` (default `5000000`), `CoverArt__TimeoutSeconds` (default `15`), `Tools__Ffmpeg`, `Tools__Ffprobe`, `Tools__YtDlp`, `Worker__MaxAutomaticRetries`, `Worker__RetryBaseDelaySeconds`, `Matching__AutoAcceptThreshold`, `Matching__ReviewThreshold`, `Matching__DurationToleranceSeconds`, `MusicBrainz__UserAgent` (shared with ListenBrainz requests), `ListenBrainz__Token`, `Playlist__MaxTracks`, and `Playlist__MaxCandidates`.
+- The repository's `.env.example` is the Docker/production template. Copy it to a Git-ignored `.env`, set mode `600`, and never commit or log it. Dotenv values are plaintext until encrypted settings support is implemented.
 - Development defaults: when `ASPNETCORE_ENVIRONMENT=Development` (set by the `MusicSync.Api` launch profile), `Config__Dir` and `Data__DatabasePath` default to a git-ignored `config/` folder at the repository root. Production must set both explicitly to persistent paths, for example `/config` and `/config/musicsync.db` in the container.
 - Validated at startup (the app stops with a clear error if they are invalid): `MusicBrainz__UserAgent` must look like `Name/Version (contact)`; `Matching__*` thresholds must be between 0 and 1, with review not above auto-accept; `Audio__Format` must be `mp3`; `Worker__Concurrency` must be `1`.
 - Not read yet: `Auth__Disable` was removed from the sample; there is no authentication bypass.

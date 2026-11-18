@@ -161,6 +161,7 @@
         <button class="nav-button" data-view="activity"><span class="nav-icon">◷</span> Activity</button>
         <button class="nav-button" data-view="library"><span class="nav-icon">▤</span> Library</button>
         <button class="nav-button" data-view="playlists"><span class="nav-icon">≡</span> Playlists</button>
+        <button class="nav-button" data-view="analytics"><span class="nav-icon">▥</span> Analytics</button>
         <button class="nav-button" data-view="settings"><span class="nav-icon">⚙</span> Settings</button>
       </nav>
       <div class="sidebar-footer">
@@ -223,6 +224,12 @@
         <section class="view" data-page="settings">
           <div class="hero"><span class="eyebrow">Private service</span><h1>Settings</h1><p>Keep the service secure and configured for your library.</p></div>
           <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong>musicadmin</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" style="width:auto">Change password</button><button class="danger-button" id="logout-all">Sign out all sessions</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p style="margin-top:5px">Healthy · SQLite · Worker online</p><p class="hint">Secrets are never displayed in the interface.</p><div style="display:flex;gap:8px;margin-top:12px"><input id="listenbrainz-token" type="password" placeholder="New ListenBrainz token" style="flex:1"><button class="small-button" id="save-token">Save</button></div><button class="ghost-button" id="generate-secret" style="margin-top:10px">Generate application secret</button></article></div>
+        </section>
+
+        <section class="view" data-page="analytics">
+          <div class="hero"><span class="eyebrow">Your service</span><h1>Analytics</h1><p>Quick health and completeness metrics from the local database.</p></div>
+          <div class="stats" id="analytics-stats"><div class="card stat"><div class="stat-value">—</div><div class="stat-label">Library files</div></div><div class="card stat"><div class="stat-value">—</div><div class="stat-label">Library size</div></div><div class="card stat"><div class="stat-value">—</div><div class="stat-label">Success rate</div></div></div>
+          <div class="card" style="padding:18px"><h2>Top artists</h2><div class="cards" id="top-artists" style="margin-top:14px"><div class="empty">Loading analytics…</div></div></div>
         </section>
       </div>
     </main>

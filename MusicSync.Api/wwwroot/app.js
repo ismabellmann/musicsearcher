@@ -95,6 +95,7 @@
     if (view === "activity") loadJobs();
     if (view === "library") loadLibrary();
     if (view === "settings") loadSettings();
+    if (view === "analytics") loadAnalytics();
   }
 
   document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => showView(button.dataset.view)));
@@ -170,6 +171,17 @@
     } catch (error) { toast(error.message); }
   }
 
+  async function loadAnalytics() {
+    try {
+      const summary = await api("/api/analytics/summary");
+      const values = document.querySelectorAll("#analytics-stats .stat-value");
+      values[0].textContent = summary.totalFiles;
+      values[1].textContent = formatBytes(summary.totalBytes);
+      values[2].textContent = `${Math.round(summary.successRate * 100)}%`;
+      document.querySelector("#top-artists").innerHTML = (summary.topArtists || []).map(artist => `<div class="result"><div class="details"><div class="title">${escapeHtml(artist.artistName)}</div><div class="subtitle">${artist.fileCount} files</div></div></div>`).join("") || '<div class="empty">No artist data yet.</div>';
+    } catch (error) { toast(error.message); }
+  }
+
   document.querySelector("#save-token")?.addEventListener("click", async () => {
     const token = document.querySelector("#listenbrainz-token").value;
     try { await api("/api/settings", { method: "PUT", body: JSON.stringify({ listenBrainzToken: token }) }); document.querySelector("#listenbrainz-token").value = ""; toast("Token status updated."); await loadSettings(); }
@@ -203,6 +215,6 @@
   }
 
   const initialView = location.hash.slice(1) || "search";
-  showView(["search", "activity", "library", "playlists", "settings"].includes(initialView) ? initialView : "search");
+  showView(["search", "activity", "library", "playlists", "analytics", "settings"].includes(initialView) ? initialView : "search");
   refreshAll();
 })();

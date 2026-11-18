@@ -409,9 +409,13 @@ score; audio acquisition remains a later pipeline step.
 
 The application serves a lightweight dependency-free frontend from `/`. It uses vanilla
 HTML, CSS, and JavaScript with no framework, external assets, web fonts, or build step.
-It includes Search, Activity/SSE, Library, Playlists, Settings, setup/login handling, and
-responsive desktop/mobile layouts. The theme button cycles through system, light, and dark
-themes; the choice is stored locally in the browser.
+It includes Search, Activity/SSE, Library, Playlists, Analytics, Settings, setup/login
+handling, and responsive desktop/mobile layouts. The theme button cycles through system,
+light, and dark themes; the choice is stored locally in the browser.
+
+Analytics are available at `GET /api/analytics/summary?topArtistLimit=10` and in the
+Analytics UI view. The summary is database-backed and does not scan the filesystem during
+requests.
 
 ## Development
 

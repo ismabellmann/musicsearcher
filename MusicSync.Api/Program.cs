@@ -150,6 +150,7 @@ builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddScoped<LibraryFileService>();
 builder.Services.AddScoped<PlaylistImportService>();
+builder.Services.AddScoped<AnalyticsService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

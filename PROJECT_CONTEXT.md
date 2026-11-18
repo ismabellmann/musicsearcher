@@ -307,11 +307,11 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | GET | `/events?jobId=&after=` | Authenticated persisted SSE stream of job progress |
 | GET | `/library` | List saved files |
 | DELETE | `/library/{id}` | Delete a file and prune empty folders |
-| GET | `/analytics/summary` | Aggregates |
 | GET/PUT | `/settings` | Settings status and write-only encrypted ListenBrainz token |
 | POST | `/settings/secrets/generate` | Generate and encrypt an application secret without returning its value |
+| GET | `/analytics/summary?topArtistLimit=10` | Database-backed library, job, completeness, and top-artist summary |
 
-Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns the static UI. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `logout-all`, `password`) are implemented. Search, playlist, album, and artist bulk preview/enqueue endpoints exist. Existing-library scan/import/accept/reject/path-correction, cover backfill, general library list/detail/delete, persisted authenticated SSE events, encrypted settings status/update, and application-secret generation are implemented. Analytics and final deployment verification remain.
+Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns the static UI. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `logout-all`, `password`) are implemented. Search, playlist, album, and artist bulk preview/enqueue endpoints exist. Existing-library scan/import/accept/reject/path-correction, cover backfill, general library list/detail/delete, persisted authenticated SSE events, encrypted settings status/update, application-secret generation, and database-backed analytics are implemented. Final deployment verification remains.
 
 ## 11. Security requirements (MUST)
 
@@ -366,7 +366,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 
 1. **M1 Skeleton:** solution layout, project references, API composition, EF entities, SQLite registration, metadata-client DI, and EF Core migrations are present. The API applies pending migrations at startup and safely baselines a matching legacy `EnsureCreated` SQLite schema. Startup validates configuration (MusicBrainz identity, matching thresholds, audio format, worker concurrency, retry settings). ✅ Implemented - first-run setup, authenticated cookie sessions, health endpoint, and configuration validation are complete. HTTPS/HSTS enforcement remains optional for the current plain-HTTP private deployment; inbound hardening is tracked in §11.
 2. **M2 Metadata:** MusicBrainz, ListenBrainz, and Spotify clients, API endpoints, and parser tests are present. 🚧 In progress - MusicBrainz uses a reusable seven-day in-memory cache and a shared one-request-per-second gate; MusicBrainz and ListenBrainz retry transient failures with `Retry-After` support, and provider failures surface as 503 instead of empty results. Front-cover retrieval from the Cover Art Archive is implemented for downloads, accepted imports, and backfill, with redirect allowlisting and a size cap. Persistent metadata caching, broader provider error tests, and remaining resilience work are future improvements.
-3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, singles and album-safe library paths, cooperative active-job cancellation, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - analytics and remaining operational hardening.
+3. **M3 Pipeline:** track/job persistence, SQLite-backed FIFO worker polling, startup recovery, three acquisition providers (`deterministic`, `local`, `yt-dlp`), best-of-10 scoring, job list/detail/approve/cancel/retry endpoints, queue position, `NeedsReview` parking, approved jobs continuing through download, ffmpeg MP3 transcode, TagLibSharp tags with an optional embedded Cover Art Archive front cover, singles and album-safe library paths, cooperative active-job cancellation, a library-root containment check, duplicate-safe admission by recording MBID, SHA-256 and target path, `LibraryFile` persistence, normalized artist credits, automatic retries with backoff for transient failures, recovery of interrupted downloads on restart, and front-cover embedding/backfill for imported files. 🚧 In progress - remaining operational hardening.
 4. **M4 Matching:** core scorer, artist matching, target-aware penalties, exact-title cap, best-of-10 selection, stored candidate lists, user selection among candidates at approval, `NeedsReview`, and consumption of approved jobs are implemented. ✅ Implemented for the single-track pipeline; channel-name matching remains future work.
 5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
 6. **M6 Realtime and library:** ✅ Implemented - `LibraryFile` rows record downloaded and imported files, duplicate admission by recording MBID, SHA-256, and target path is implemented, general listing/detail/delete endpoints are available, and persisted authenticated SSE job events support replay with `Last-Event-ID`. UI integration and event retention maintenance remain.
@@ -378,8 +378,8 @@ Progress below reflects the current repository implementation. A passing test/bu
 1. Complete one single-track pipeline end to end using only an acquisition source the user is authorized to access: scorer correctness, approved-candidate behavior, acquisition, MP3 conversion, tagging, safe library path, duplicate detection, and persisted `LibraryFile`. This vertical slice is implemented, including duplicate-safe admission.
 2. Verify job lifecycle and failure recovery for that vertical slice with integration tests; do not mark a job `Done` until the file and database record are successfully committed.
 3. Add bulk enqueue/import workflows beyond public Spotify playlists, starting with album and artist top-N flows.
-4. Add SSE/activity and library list/delete endpoints, followed by the minimal UI that exposes Search, Activity, Library, and Settings.
-5. Prioritize security, configuration, and deployment packaging needed for the chosen target; defer analytics and other secondary features until the core workflow is dependable.
+4. Add SSE/activity and library list/delete endpoints, followed by the minimal UI that exposes Search, Activity, Library, Analytics, and Settings.
+5. Prioritize security, configuration, and deployment packaging needed for the chosen target; defer secondary features until the core workflow is dependable.
 
 ### Completed slice: duplicate-safe library admission (M3/M6)
 
@@ -423,7 +423,7 @@ The application staging directory defaults to `/music/.musicsync-staging` in the
 final `File.Move` stays on the same filesystem as the library. Library scans explicitly skip
 that directory.
 
-Remaining after this slice: analytics, targeted security follow-ups, UI API polish, and final deployment verification.
+Remaining after this slice: targeted security follow-ups, UI API polish, and final deployment verification.
 
 ## 15. Open questions (ask the owner before assuming)
 

@@ -159,9 +159,18 @@
 
   async function loadJobs() {
     try {
-      const result = await api("/api/downloads?page=1&pageSize=50");
+      const [result, analytics] = await Promise.all([
+        api("/api/downloads?page=1&pageSize=50"),
+        api("/api/analytics/summary?topArtistLimit=1")
+      ]);
       const target = document.querySelector("[data-page=activity] .cards");
-      target.innerHTML = (result.items || []).map(job => `<article class="card job">
+      const jobs = result.items || [];
+      const activeStatuses = new Set(["Queued", "Resolving", "Searching", "Approved", "Downloading", "Tagging", "ReadyForTagging"]);
+      const jobStatuses = analytics.jobsByStatus || {};
+      document.querySelector("#activity-in-progress").textContent = Object.entries(jobStatuses).filter(([status]) => activeStatuses.has(status)).reduce((total, [, count]) => total + count, 0);
+      document.querySelector("#activity-completed").textContent = analytics.completedJobs ?? 0;
+      document.querySelector("#activity-review").textContent = analytics.needsReviewCount ?? 0;
+      target.innerHTML = jobs.map(job => `<article class="card job">
         <div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(job.trackTitle)}</div><div class="subtitle">${escapeHtml(job.artistName)} · Job #${job.jobId}</div></div>
         <span class="badge ${job.jobStatus === "Done" ? "success" : job.jobStatus === "Failed" ? "danger" : "warning"}">${escapeHtml(job.jobStatus)}</span>
         ${job.jobStatus === "NeedsReview" ? `<button class="small-button" data-review="${job.jobId}">Review</button>` : ""}

@@ -7,6 +7,8 @@
   const themeLabels = { system: "System", light: "Light", dark: "Dark" };
   let eventSource;
   let toastTimer;
+  let lastSearchType = "track";
+  let playlistPreview;
 
   function setTheme(theme) {
     root.dataset.theme = theme;
@@ -103,13 +105,28 @@
 
   function renderResults(results) {
     const target = document.querySelector("#search-results");
+    const action = lastSearchType === "album" ? "Preview album" : lastSearchType === "artist" ? "Preview top tracks" : "Download";
     target.innerHTML = results.length ? results.map((track, index) => `<article class="card result">
       <div class="cover">${index % 2 ? "◉" : "♫"}</div>
       <div class="details"><div class="title">${escapeHtml(track.title)}</div><div class="subtitle">${escapeHtml(track.artistName || "Unknown artist")} · ${escapeHtml(track.albumTitle || "Single")}</div></div>
-      <div class="actions"><span class="badge success">MusicBrainz</span><button class="small-button" data-download='${escapeAttribute(JSON.stringify(track))}'>Download</button></div>
+      <div class="actions"><span class="badge success">MusicBrainz</span><button class="small-button" data-result='${escapeAttribute(JSON.stringify(track))}'>${action}</button></div>
     </article>`).join("") : '<div class="empty">No matching tracks found.</div>';
-    target.querySelectorAll("[data-download]").forEach(button => button.addEventListener("click", async () => {
-      try { await api("/api/downloads", { method: "POST", body: button.dataset.download ? JSON.stringify({ track: JSON.parse(button.dataset.download) }) : "{}" }); toast("Track added to queue."); }
+    target.querySelectorAll("[data-result]").forEach(button => button.addEventListener("click", async () => {
+      const track = JSON.parse(button.dataset.result);
+      try {
+        if (lastSearchType === "track") {
+          await api("/api/downloads", { method: "POST", body: JSON.stringify({ track }) });
+          toast("Track added to queue.");
+        } else if (lastSearchType === "album") {
+          const preview = await api(`/api/playlists/album/${track.recordingMbid}/preview`, { method: "POST", body: "{}" });
+          openPlaylistPreview(preview);
+          showView("playlists");
+        } else {
+          const preview = await api(`/api/playlists/artist/${track.recordingMbid}/preview?artistName=${encodeURIComponent(track.artistName || track.title)}&count=10`, { method: "POST", body: "{}" });
+          openPlaylistPreview(preview);
+          showView("playlists");
+        }
+      }
       catch (error) { toast(error.message); }
     }));
   }
@@ -119,6 +136,7 @@
     if (!query) return toast("Enter a search term.");
     try {
       const type = document.querySelector(".search-box select").value.slice(0, -1).toLowerCase();
+      lastSearchType = type;
       const result = await api(`/api/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(query)}`);
       renderResults(result || []);
     } catch (error) { toast(error.message); }
@@ -152,14 +170,27 @@
 
   async function loadLibrary() {
     try {
-      const result = await api("/api/library?page=1&pageSize=50");
+      const q = document.querySelector("#library-filter")?.value.trim() || "";
+      const origin = document.querySelector("#library-origin")?.value || "";
+      const result = await api(`/api/library?page=1&pageSize=50&q=${encodeURIComponent(q)}&origin=${encodeURIComponent(origin)}`);
       const target = document.querySelector("[data-page=library] .cards");
-      target.innerHTML = (result.items || []).map(file => `<article class="card file"><div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(file.title)}</div><div class="subtitle">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")} · ${formatBytes(file.sizeBytes)}</div></div><span class="badge neutral">${escapeHtml(file.origin)}</span><button class="small-button" data-delete="${file.fileId}">Delete</button></article>`).join("") || '<div class="empty">Your library is empty.</div>';
+      target.innerHTML = (result.items || []).map(file => `<article class="card file"><div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(file.title)}</div><div class="subtitle">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")} · ${formatBytes(file.sizeBytes)}</div></div><span class="badge neutral">${escapeHtml(file.origin)}</span><div class="actions"><button class="small-button" data-detail="${file.fileId}">Details</button><button class="small-button" data-delete="${file.fileId}">Delete</button></div></article>`).join("") || '<div class="empty">Your library is empty.</div>';
+      target.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => showLibraryDetail(button.dataset.detail)));
       target.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", async () => {
         if (!confirm("Delete this file from the library?")) return;
         try { await api(`/api/library/${button.dataset.delete}`, { method: "DELETE" }); toast("File deleted."); await loadLibrary(); }
         catch (error) { toast(error.message); }
       }));
+    } catch (error) { toast(error.message); }
+  }
+
+  async function showLibraryDetail(id) {
+    try {
+      const file = await api(`/api/library/${id}`);
+      const dialog = document.createElement("dialog");
+      dialog.className = "modal";
+      dialog.innerHTML = `<form method="dialog" style="padding:22px"><h2>${escapeHtml(file.title)}</h2><p style="margin-top:8px">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")}</p><p class="hint" style="margin-top:12px">${escapeHtml(file.relativePath)}<br>${formatBytes(file.sizeBytes)} · ${escapeHtml(file.origin)}<br>Recording: ${escapeHtml(file.recordingMbid)}</p><div class="modal-actions"><button class="primary-button">Close</button></div></form>`;
+      document.body.append(dialog); dialog.showModal(); dialog.addEventListener("close", () => dialog.remove());
     } catch (error) { toast(error.message); }
   }
 
@@ -191,6 +222,13 @@
     try { await api("/api/settings/secrets/generate", { method: "POST", body: JSON.stringify({ name: "ApplicationSecret" }) }); toast("Application secret generated and encrypted."); await loadSettings(); }
     catch (error) { toast(error.message); }
   });
+  document.querySelector("#change-password")?.addEventListener("click", async () => {
+    const currentPassword = prompt("Current password:");
+    const newPassword = prompt("New password (at least 12 characters):");
+    if (!currentPassword || !newPassword) return;
+    try { await api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }); toast("Password updated."); }
+    catch (error) { toast(error.message); }
+  });
   document.querySelector("#logout-all")?.addEventListener("click", async () => {
     try { await api("/api/auth/logout-all", { method: "POST", body: "{}" }); toast("All sessions revoked."); await showAuth(); }
     catch (error) { toast(error.message); }
@@ -198,15 +236,44 @@
 
   document.querySelector("#playlist-preview")?.addEventListener("click", async () => {
     const url = document.querySelector("#playlist-url").value.trim();
-    try { const preview = await api("/api/playlists/preview", { method: "POST", body: JSON.stringify({ url }) }); toast(`Preview created with ${preview.items?.length || 0} items.`); }
+    try { const preview = await api("/api/playlists/preview", { method: "POST", body: JSON.stringify({ url }) }); openPlaylistPreview(preview); toast(`Preview created with ${preview.items?.length || 0} items.`); }
     catch (error) { toast(error.message); }
   });
+
+  function openPlaylistPreview(preview) {
+    playlistPreview = preview;
+    const target = document.querySelector("#playlist-items");
+    target.innerHTML = (preview.items || []).map(item => {
+      const options = (item.candidates || []).map(candidate => `<option value="${candidate.recordingMbid}" ${candidate.recordingMbid === item.selectedRecordingMbid ? "selected" : ""}>${escapeHtml(candidate.title)} · ${escapeHtml(candidate.artistName)} (${Math.round(candidate.score * 100)}%)</option>`).join("");
+      return `<article class="card result"><input type="checkbox" data-playlist-item="${item.itemId}" ${item.status === "Matched" ? "checked" : ""} style="width:18px;height:18px"><div class="details"><div class="title">${escapeHtml(item.title)}</div><div class="subtitle">${escapeHtml(item.artistName)} · position ${item.position}</div></div><span class="badge ${item.status === "Matched" ? "success" : item.status === "NeedsReview" ? "warning" : "neutral"}">${escapeHtml(item.status)}</span>${options ? `<select data-playlist-selection="${item.itemId}" style="max-width:260px"><option value="">Choose candidate</option>${options}</select>` : ""}</article>`;
+    }).join("") || '<div class="empty">No preview items.</div>';
+  }
+
+  document.querySelector("#playlist-enqueue")?.addEventListener("click", async () => {
+    if (!playlistPreview) return toast("Create a preview first.");
+    const itemIds = [...document.querySelectorAll("[data-playlist-item]:checked")].map(item => Number(item.dataset.playlistItem));
+    const selections = {};
+    document.querySelectorAll("[data-playlist-selection]").forEach(select => { if (select.value) selections[select.dataset.playlistSelection] = select.value; });
+    try {
+      const result = await api(`/api/playlists/${playlistPreview.importId}/enqueue`, { method: "POST", body: JSON.stringify({ itemIds, selections }) });
+      toast(`${result.enqueued?.length || 0} tracks added; ${result.skipped?.length || 0} skipped.`);
+      const refreshed = await api(`/api/playlists/${playlistPreview.importId}`); openPlaylistPreview(refreshed);
+    } catch (error) { toast(error.message); }
+  });
+
+  document.querySelector("#library-scan")?.addEventListener("click", async () => {
+    try { const result = await api("/api/library/scan", { method: "POST", body: "{}" }); toast(result ? "Library scan complete." : "Library scan complete."); await loadLibrary(); }
+    catch (error) { toast(error.message); }
+  });
+  document.querySelector("#library-filter")?.addEventListener("input", debounce(loadLibrary, 300));
+  document.querySelector("#library-origin")?.addEventListener("change", loadLibrary);
 
   document.querySelector("#logout")?.addEventListener("click", async () => {
     try { await api("/api/auth/logout", { method: "POST", body: "{}" }); await showAuth(); } catch (error) { toast(error.message); }
   });
 
   function formatBytes(value) { if (!value) return "0 B"; const units = ["B", "KB", "MB", "GB"]; let index = 0; let size = value; while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; } return `${size.toFixed(index ? 1 : 0)} ${units[index]}`; }
+  function debounce(callback, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => callback(...args), delay); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character])); }
   function escapeAttribute(value) { return escapeHtml(value); }
 

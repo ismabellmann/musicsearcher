@@ -4,6 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MusicSync UI Mockup</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem('musicsync-theme') || 'system';
+      document.documentElement.dataset.theme = saved;
+    })();
+  </script>
   <script src="/app.js" defer></script>
   <style>
     :root {
@@ -207,23 +213,22 @@
 
         <section class="view" data-page="library">
           <div class="hero"><span class="eyebrow">Your files</span><h1>Library</h1><p>Browse imported and acquired music without exposing filesystem details.</p></div>
-          <div class="toolbar"><input placeholder="Filter by title, artist, album" aria-label="Filter library" style="max-width:360px"><div class="toolbar-actions"><select aria-label="Library origin"><option>All files</option><option>Imported</option><option>Downloaded</option></select><button class="ghost-button" style="width:auto">Scan library</button></div></div>
+          <div class="toolbar"><input id="library-filter" placeholder="Filter by title, artist, album" aria-label="Filter library" style="max-width:360px"><div class="toolbar-actions"><select id="library-origin" aria-label="Library origin"><option value="">All files</option><option value="imported">Imported</option><option value="downloaded">Downloaded</option></select><button class="ghost-button" id="library-scan" style="width:auto">Scan library</button></div></div>
           <div class="cards">
-            <article class="card file"><div class="cover">♫</div><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · The Wall · 8.4 MB</div></div><span class="badge success">Imported</span><button class="small-button" data-confirm="Delete this file from the library?">Delete</button></article>
-            <article class="card file"><div class="cover">◉</div><div class="details"><div class="title">Comfortably Numb</div><div class="subtitle">Pink Floyd · The Wall · 7.9 MB</div></div><span class="badge neutral">Downloaded</span><button class="small-button" data-confirm="Delete this file from the library?">Delete</button></article>
+            <div class="empty">Loading library…</div>
           </div>
         </section>
 
         <section class="view" data-page="playlists">
           <div class="hero"><span class="eyebrow">Bulk import</span><h1>Playlist preview</h1><p>Paste a public Spotify playlist URL. No Spotify credentials are required.</p></div>
           <div class="card" style="padding:18px;max-width:720px"><div class="playlist-form"><input id="playlist-url" value="https://open.spotify.com/playlist/example" aria-label="Spotify playlist URL"><button class="primary-button" id="playlist-preview" style="margin-top:10px">Create preview</button><p class="hint">Tracks are matched to MusicBrainz before anything is added to the queue.</p></div></div>
-          <div class="toolbar"><h2>Preview items</h2><button class="primary-button" data-toast="2 confirmed tracks added to queue">Enqueue confirmed</button></div>
-          <div class="cards"><article class="card result"><div class="details"><div class="title">Another Brick in the Wall, Part 2</div><div class="subtitle">Pink Floyd · Candidate 1 of 10</div></div><span class="badge success">Matched</span><button class="small-button">Change</button></article><article class="card result"><div class="details"><div class="title">Wish You Were Here</div><div class="subtitle">Pink Floyd · Choose a candidate before enqueueing</div></div><span class="badge warning">Needs review</span><button class="small-button">Review</button></article></div>
+          <div class="toolbar"><h2>Preview items</h2><button class="primary-button" id="playlist-enqueue">Enqueue selected</button></div>
+          <div class="cards" id="playlist-items"><div class="empty">Create a preview to review tracks.</div></div>
         </section>
 
         <section class="view" data-page="settings">
           <div class="hero"><span class="eyebrow">Private service</span><h1>Settings</h1><p>Keep the service secure and configured for your library.</p></div>
-          <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong>musicadmin</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" style="width:auto">Change password</button><button class="danger-button" id="logout-all">Sign out all sessions</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p style="margin-top:5px">Healthy · SQLite · Worker online</p><p class="hint">Secrets are never displayed in the interface.</p><div style="display:flex;gap:8px;margin-top:12px"><input id="listenbrainz-token" type="password" placeholder="New ListenBrainz token" style="flex:1"><button class="small-button" id="save-token">Save</button></div><button class="ghost-button" id="generate-secret" style="margin-top:10px">Generate application secret</button></article></div>
+          <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong>musicadmin</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" id="change-password" style="width:auto">Change password</button><button class="danger-button" id="logout-all">Sign out all sessions</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p style="margin-top:5px">Healthy · SQLite · Worker online</p><p class="hint">Secrets are never displayed in the interface.</p><div style="display:flex;gap:8px;margin-top:12px"><input id="listenbrainz-token" type="password" placeholder="New ListenBrainz token" style="flex:1"><button class="small-button" id="save-token">Save</button></div><button class="ghost-button" id="generate-secret" style="margin-top:10px">Generate application secret</button></article></div>
         </section>
 
         <section class="view" data-page="analytics">
@@ -238,40 +243,7 @@
   <dialog class="modal" id="confirm-dialog"><form method="dialog" style="padding:22px"><h2>Confirm action</h2><p id="confirm-text" style="margin-top:8px"></p><div class="modal-actions"><button class="ghost-button" value="cancel" style="width:auto">Cancel</button><button class="danger-button" value="confirm">Confirm</button></div></form></dialog>
   <div id="toast" style="position:fixed;right:18px;bottom:18px;display:none;padding:12px 15px;border:1px solid var(--border);border-radius:9px;background:var(--surface);box-shadow:var(--shadow)"></div>
 
-  <script>
-    const root = document.documentElement;
-    const themeButton = document.querySelector('#theme-toggle');
-    const themes = ['system', 'light', 'dark'];
-    const themeLabels = { system: 'System', light: 'Light', dark: 'Dark' };
-    function updateThemeButton() { themeButton.textContent = `◐ Theme: ${themeLabels[root.dataset.theme]}`; }
-    updateThemeButton();
-    themeButton.addEventListener('click', () => {
-      const next = themes[(themes.indexOf(root.dataset.theme) + 1) % themes.length];
-      root.dataset.theme = next;
-      localStorage.setItem('musicsync-theme', next);
-      updateThemeButton();
-    });
 
-    const title = document.querySelector('#page-title');
-    function showView(view) {
-      document.querySelectorAll('.view').forEach(item => item.classList.toggle('active', item.dataset.page === view));
-      document.querySelectorAll('.nav-button').forEach(item => item.classList.toggle('active', item.dataset.view === view));
-      title.textContent = view[0].toUpperCase() + view.slice(1);
-      document.querySelector('#sidebar').classList.remove('open');
-      location.hash = view;
-    }
-    document.querySelectorAll('.nav-button').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
-    document.querySelector('#mobile-menu').addEventListener('click', () => document.querySelector('#sidebar').classList.toggle('open'));
-    showView(location.hash.slice(1) || 'search');
 
-    const toast = document.querySelector('#toast');
-    let toastTimer;
-    function showToast(message) { toast.textContent = message; toast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.style.display = 'none', 2400); }
-    document.querySelectorAll('[data-toast]').forEach(button => button.addEventListener('click', () => showToast(button.dataset.toast)));
-    const dialog = document.querySelector('#confirm-dialog');
-    document.querySelectorAll('[data-confirm]').forEach(button => button.addEventListener('click', () => { document.querySelector('#confirm-text').textContent = button.dataset.confirm; dialog.showModal(); }));
-    document.querySelector('#logout').addEventListener('click', () => showToast('Sign out would call /api/auth/logout'));
-    document.querySelector('#search-button').addEventListener('click', () => showToast('Search would call /api/search'));
-  </script>
 </body>
 </html>

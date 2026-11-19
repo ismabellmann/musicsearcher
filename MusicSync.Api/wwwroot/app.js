@@ -128,21 +128,34 @@
     </article>`).join("") : '<div class="empty">No matching tracks found.</div>';
     target.querySelectorAll("[data-result]").forEach(button => button.addEventListener("click", async () => {
       const track = JSON.parse(button.dataset.result);
+      const originalLabel = button.textContent;
       try {
         if (lastSearchType === "track") {
           await api("/api/downloads", { method: "POST", body: JSON.stringify({ track }) });
           toast("Track added to queue.");
         } else if (lastSearchType === "album") {
+          button.disabled = true;
+          button.innerHTML = '<span class="spinner" aria-hidden="true"></span> Loading…';
+          showView("playlists");
+          document.querySelector("#playlist-items").innerHTML = '<div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading album recordings…</span></div>';
           const preview = await api(`/api/playlists/album/${track.recordingMbid}/preview`, { method: "POST", body: "{}" });
           openPlaylistPreview(preview);
-          showView("playlists");
         } else {
+          button.disabled = true;
+          button.innerHTML = '<span class="spinner" aria-hidden="true"></span> Loading…';
+          showView("playlists");
+          document.querySelector("#playlist-items").innerHTML = '<div class="loading"><span class="spinner" aria-hidden="true"></span><span>Loading artist top tracks…</span></div>';
           const preview = await api(`/api/playlists/artist/${track.recordingMbid}/preview?artistName=${encodeURIComponent(track.artistName || track.title)}&count=10`, { method: "POST", body: "{}" });
           openPlaylistPreview(preview);
-          showView("playlists");
         }
       }
-      catch (error) { toast(error.message); }
+      catch (error) {
+        if (lastSearchType !== "track") document.querySelector("#playlist-items").innerHTML = `<div class="empty">Preview failed. ${escapeHtml(error.message)}</div>`;
+        toast(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
     }));
   }
 

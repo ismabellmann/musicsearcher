@@ -132,6 +132,24 @@ public sealed class MusicBrainzClientTests
         Assert.Equal(1, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task GetAlbumAsync_ResolvesReleaseGroupThenReleaseRecordings()
+    {
+        var groupId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var releaseId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var handler = new SequenceHandler(
+            $"{{\"releases\":[{{\"id\":\"{releaseId}\"}}]}}",
+            $"{{\"id\":\"{releaseId}\",\"title\":\"Album\",\"artist-credit\":[{{\"artist\":{{\"id\":\"cccccccc-cccc-cccc-cccc-cccccccccccc\",\"name\":\"Artist\"}}}}],\"media\":[{{\"tracks\":[{{\"position\":1,\"recording\":{{\"id\":\"dddddddd-dddd-dddd-dddd-dddddddddddd\",\"title\":\"Song\",\"length\":180000,\"artist-credit\":[{{\"artist\":{{\"id\":\"cccccccc-cccc-cccc-cccc-cccccccccccc\",\"name\":\"Artist\"}}}}]}}}}]}}]}}");
+        var client = new MusicBrainzClient(new HttpClient(handler), NullLogger<MusicBrainzClient>.Instance);
+
+        var album = await client.GetAlbumAsync(groupId, CancellationToken.None);
+
+        Assert.NotNull(album);
+        Assert.Equal("Album", album!.Title);
+        Assert.Single(album.Tracks);
+        Assert.Equal(releaseId, handler.Requests[1].ReleaseId);
+    }
+
     private static MusicBrainzClient CreateClient(string json)
     {
         var handler = new StubHandler(json);
@@ -163,6 +181,20 @@ public sealed class MusicBrainzClientTests
             {
                 Content = new StringContent(responseBody)
             });
+        }
+    }
+
+    private sealed class SequenceHandler(string groupResponse, string releaseResponse) : HttpMessageHandler
+    {
+        public List<(string Path, Guid ReleaseId)> Requests { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var id = Guid.TryParse(path.Split('/').Last(), out var parsed) ? parsed : Guid.Empty;
+            Requests.Add((path, id));
+            var content = Requests.Count == 1 ? groupResponse : releaseResponse;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(content) });
         }
     }
 }

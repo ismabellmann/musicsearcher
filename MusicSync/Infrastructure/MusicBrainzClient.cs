@@ -117,7 +117,15 @@ public class MusicBrainzClient : IMetadataProvider
 
         _logger.LogInformation("Fetching MusicBrainz album detail: {Mbid}", releaseGroupMbid);
 
-        var content = await GetContentAsync(BuildAlbumUri(releaseGroupMbid), "album detail", notFoundIsNull: true, ct);
+        var releaseGroupContent = await GetContentAsync(BuildReleaseGroupUri(releaseGroupMbid), "album release lookup", notFoundIsNull: true, ct);
+        if (releaseGroupContent is null)
+            return null;
+
+        var releaseId = ParseFirstReleaseId(releaseGroupContent);
+        if (releaseId == Guid.Empty)
+            return null;
+
+        var content = await GetContentAsync(BuildReleaseUri(releaseId), "album detail", notFoundIsNull: true, ct);
         if (content is null)
             return null;
 
@@ -251,9 +259,23 @@ public class MusicBrainzClient : IMetadataProvider
         return new System.Uri($"https://musicbrainz.org/ws/2/{resource}?query={encodedQuery}&fmt=json", System.UriKind.Absolute);
     }
 
-    private System.Uri BuildAlbumUri(Guid releaseGroupMbid)
+    private System.Uri BuildReleaseGroupUri(Guid releaseGroupMbid)
     {
-        return new System.Uri($"https://musicbrainz.org/ws/2/release-group/{releaseGroupMbid}?inc=recordings&fmt=json", System.UriKind.Absolute);
+        return new System.Uri($"https://musicbrainz.org/ws/2/release-group/{releaseGroupMbid}?inc=releases&fmt=json", System.UriKind.Absolute);
+    }
+
+    private System.Uri BuildReleaseUri(Guid releaseMbid)
+    {
+        return new System.Uri($"https://musicbrainz.org/ws/2/release/{releaseMbid}?inc=recordings+artist-credits&fmt=json", System.UriKind.Absolute);
+    }
+
+    private static Guid ParseFirstReleaseId(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var release = document.RootElement.TryGetProperty("releases", out var releases)
+            ? releases.EnumerateArray().FirstOrDefault()
+            : default;
+        return release.ValueKind == JsonValueKind.Object ? ReadGuid(release, "id") : Guid.Empty;
     }
 
     private System.Uri BuildIsrcUri(string isrc)

@@ -209,7 +209,7 @@
     ["job.created", "job.claimed", "job.searching", "job.ready_for_tagging", "job.downloading", "job.tagging", "job.done", "job.failed", "job.cancelled"].forEach(type => {
       eventSource.addEventListener(type, event => { try { toast(JSON.parse(event.data).message); } catch { /* Ignore malformed event. */ } loadJobs(); });
     });
-    eventSource.onerror = () => { eventSource.close(); eventSource = null; };
+    eventSource.onerror = () => { toast("Activity connection interrupted; reconnecting…"); };
   }
   function stopEvents() { if (eventSource) { eventSource.close(); eventSource = null; } }
 
@@ -241,9 +241,11 @@
 
   async function loadSettings() {
     try {
-      const settings = await api("/api/settings");
+      const [settings, health] = await Promise.all([api("/api/settings"), fetch("/api/health", { credentials: "same-origin" }).then(response => response.json())]);
       const hint = document.querySelector("[data-page=settings] .cards article:nth-child(2) .hint");
       if (hint) hint.textContent = `ListenBrainz token: ${settings.listenBrainzConfigured ? "configured" : "not configured"}. Secrets are never displayed.`;
+      const serviceStatus = document.querySelector("#service-status");
+      if (serviceStatus) serviceStatus.textContent = health.data?.status === "ok" ? "Healthy · SQLite · Worker online" : "Service health unavailable";
     } catch (error) { toast(error.message); }
   }
 
@@ -267,12 +269,18 @@
     try { await api("/api/settings/secrets/generate", { method: "POST", body: JSON.stringify({ name: "ApplicationSecret" }) }); toast("Application secret generated and encrypted."); await loadSettings(); }
     catch (error) { toast(error.message); }
   });
-  document.querySelector("#change-password")?.addEventListener("click", async () => {
-    const currentPassword = prompt("Current password:");
-    const newPassword = prompt("New password (at least 12 characters):");
-    if (!currentPassword || !newPassword) return;
-    try { await api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }); toast("Password updated."); }
-    catch (error) { toast(error.message); }
+  document.querySelector("#change-password")?.addEventListener("click", () => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "modal";
+    dialog.innerHTML = `<form style="padding:22px"><h2>Change password</h2><p class="hint">Use at least 12 characters.</p><input id="current-password" required type="password" placeholder="Current password" autocomplete="current-password" style="width:100%;margin-top:12px"><input id="new-password" required minlength="12" type="password" placeholder="New password" autocomplete="new-password" style="width:100%;margin-top:8px"><p class="hint" id="password-error" style="color:var(--danger);min-height:18px"></p><div class="modal-actions"><button type="button" class="ghost-button" id="password-cancel" style="width:auto">Cancel</button><button type="submit" class="primary-button">Update password</button></div></form>`;
+    document.body.append(dialog); dialog.showModal();
+    dialog.querySelector("#password-cancel").addEventListener("click", () => dialog.close());
+    dialog.querySelector("form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try { await api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword: dialog.querySelector("#current-password").value, newPassword: dialog.querySelector("#new-password").value }) }); dialog.close(); toast("Password updated."); }
+      catch (error) { dialog.querySelector("#password-error").textContent = error.message; }
+    });
+    dialog.addEventListener("close", () => dialog.remove());
   });
   document.querySelector("#logout-all")?.addEventListener("click", async () => {
     try { await api("/api/auth/logout-all", { method: "POST", body: "{}" }); toast("All sessions revoked."); await showAuth(); }
@@ -323,7 +331,12 @@
   function escapeAttribute(value) { return escapeHtml(value); }
 
   async function refreshAll() {
-    try { const status = await api("/api/auth/status"); if (!status.signedIn) return showAuth(); } catch { return showAuth(); }
+    try {
+      const status = await api("/api/auth/status");
+      if (!status.signedIn) return showAuth();
+      const user = document.querySelector("#current-user");
+      if (user) user.textContent = status.username || "signed-in user";
+    } catch { return showAuth(); }
   }
 
   const initialView = location.hash.slice(1) || "search";

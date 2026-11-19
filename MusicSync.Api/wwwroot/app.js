@@ -53,16 +53,31 @@
       const dialog = document.createElement("dialog");
       dialog.id = "auth-modal";
       dialog.className = "modal";
-      dialog.innerHTML = `<form method="dialog" id="auth-form" style="padding:22px">
-        <span class="eyebrow" id="auth-eyebrow">Private service</span>
+      dialog.setAttribute("aria-modal", "true");
+      dialog.innerHTML = `<form id="auth-form" style="padding:22px">
+        <span class="eyebrow" id="auth-eyebrow">Authentication required</span>
         <h2 id="auth-title">Sign in</h2>
-        <p id="auth-description" style="margin:8px 0 18px">Use your MusicSync account.</p>
+        <p id="auth-description" style="margin:8px 0 18px">Use your MusicSync account to continue.</p>
         <input id="auth-user" required minlength="3" maxlength="50" placeholder="Username" autocomplete="username" style="width:100%;margin-bottom:8px">
         <input id="auth-password" required minlength="12" type="password" placeholder="Password" autocomplete="current-password" style="width:100%">
         <p id="auth-error" class="hint" style="color:var(--danger);min-height:18px"></p>
         <div class="modal-actions"><button class="primary-button" type="submit">Continue</button></div>
       </form>`;
       document.body.append(dialog);
+      dialog.addEventListener("cancel", event => event.preventDefault());
+      fetch("/api/auth/status", { credentials: "same-origin" })
+        .then(response => response.json())
+        .then(status => {
+          const setup = !status.data?.setupComplete;
+          dialog.querySelector("#auth-eyebrow").textContent = setup ? "First-time setup" : "Private service";
+          dialog.querySelector("#auth-title").textContent = setup ? "Create your account" : "Sign in to MusicSync";
+          dialog.querySelector("#auth-description").textContent = setup
+            ? "Create the single account used to protect this private service."
+            : "Sign in to continue to your music library.";
+          dialog.querySelector("#auth-password").autocomplete = setup ? "new-password" : "current-password";
+          dialog.querySelector("#auth-form button[type=submit]").textContent = setup ? "Create account" : "Sign in";
+        })
+        .catch(() => { dialog.querySelector("#auth-error").textContent = "Could not check the setup status."; });
       dialog.showModal();
       const form = dialog.querySelector("form");
       form.addEventListener("submit", async event => {

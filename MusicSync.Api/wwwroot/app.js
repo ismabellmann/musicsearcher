@@ -146,15 +146,35 @@
     }));
   }
 
-  document.querySelector("#search-button")?.addEventListener("click", async () => {
+  async function runSearch() {
     const query = document.querySelector("#search-input").value.trim();
     if (!query) return toast("Enter a search term.");
+    const button = document.querySelector("#search-button");
+    const results = document.querySelector("#search-results");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Searching…";
+    results.innerHTML = '<div class="loading"><span class="spinner" aria-hidden="true"></span><span>Searching MusicBrainz…</span></div>';
     try {
       const type = document.querySelector(".search-box select").value.slice(0, -1).toLowerCase();
       lastSearchType = type;
       const result = await api(`/api/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(query)}`);
       renderResults(result || []);
-    } catch (error) { toast(error.message); }
+    } catch (error) {
+      results.innerHTML = `<div class="empty">Search failed. ${escapeHtml(error.message)}</div>`;
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
+  document.querySelector("#search-button")?.addEventListener("click", runSearch);
+  document.querySelector("#search-input")?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runSearch();
+    }
   });
 
   async function loadJobs() {

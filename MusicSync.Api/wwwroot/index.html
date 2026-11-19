@@ -130,6 +130,10 @@
     .stat-value { font-size: 25px; font-weight: 750; }
     .stat-label { color: var(--muted); font-size: 13px; }
     .empty { padding: 35px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+    .loading { display: inline-flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); padding: 35px; width: 100%; }
+    .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
     .playlist-form { max-width: 700px; }
     .playlist-form input { width: 100%; }
     .hint { font-size: 12px; margin-top: 8px; }

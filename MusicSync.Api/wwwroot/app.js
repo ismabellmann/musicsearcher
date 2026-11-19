@@ -149,12 +149,33 @@
       target.innerHTML = (result.items || []).map(job => `<article class="card job">
         <div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(job.trackTitle)}</div><div class="subtitle">${escapeHtml(job.artistName)} · Job #${job.jobId}</div></div>
         <span class="badge ${job.jobStatus === "Done" ? "success" : job.jobStatus === "Failed" ? "danger" : "warning"}">${escapeHtml(job.jobStatus)}</span>
+        ${job.jobStatus === "NeedsReview" ? `<button class="small-button" data-review="${job.jobId}">Review</button>` : ""}
         ${["Done", "Failed", "Cancelled"].includes(job.jobStatus) ? "" : `<button class="small-button" data-cancel="${job.jobId}">Cancel</button>`}
       </article>`).join("") || '<div class="empty">No jobs yet.</div>';
       target.querySelectorAll("[data-cancel]").forEach(button => button.addEventListener("click", async () => {
         try { await api(`/api/downloads/${button.dataset.cancel}/cancel`, { method: "POST", body: "{}" }); toast("Cancellation requested."); await loadJobs(); }
         catch (error) { toast(error.message); }
       }));
+      target.querySelectorAll("[data-review]").forEach(button => button.addEventListener("click", () => reviewJob(button.dataset.review)));
+    } catch (error) { toast(error.message); }
+  }
+
+  async function reviewJob(jobId) {
+    try {
+      const job = await api(`/api/downloads/${jobId}`);
+      const candidates = job.candidates || [];
+      const dialog = document.createElement("dialog");
+      dialog.className = "modal";
+      dialog.innerHTML = `<form method="dialog" style="padding:22px"><h2>Review match</h2><p style="margin:8px 0 14px">${escapeHtml(job.trackTitle)} · ${escapeHtml(job.artistName)}</p><div class="cards">${candidates.map(candidate => `<label class="card result" style="cursor:pointer"><input type="radio" name="candidate" value="${candidate.candidateId}" ${candidate.rank === 1 ? "checked" : ""}><div class="details"><div class="title">${escapeHtml(candidate.title)}</div><div class="subtitle">${Math.round(candidate.score * 100)}% · ${escapeHtml(candidate.reason || "No reason provided")}</div></div></label>`).join("") || '<div class="empty">No candidates were stored.</div>'}</div><div class="modal-actions"><button class="ghost-button" value="cancel" style="width:auto">Cancel</button><button class="primary-button" id="approve-candidate" value="approve">Approve</button></div></form>`;
+      document.body.append(dialog); dialog.showModal();
+      dialog.querySelector("#approve-candidate")?.addEventListener("click", async event => {
+        event.preventDefault();
+        const selected = dialog.querySelector("input[name=candidate]:checked");
+        if (!selected) return toast("Choose a candidate first.");
+        try { await api(`/api/downloads/${jobId}/approve`, { method: "POST", body: JSON.stringify({ candidateId: Number(selected.value) }) }); dialog.close(); toast("Candidate approved."); await loadJobs(); }
+        catch (error) { toast(error.message); }
+      });
+      dialog.addEventListener("close", () => dialog.remove());
     } catch (error) { toast(error.message); }
   }
 

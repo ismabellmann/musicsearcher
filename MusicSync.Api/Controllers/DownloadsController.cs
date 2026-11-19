@@ -45,7 +45,9 @@ public sealed class DownloadsController : ControllerBase
                 "Se requiere un identificador de MusicBrainz y el título de la canción."));
         }
 
-        var providerName = string.IsNullOrWhiteSpace(request.Provider) ? "deterministic" : request.Provider.Trim();
+        var providerName = string.IsNullOrWhiteSpace(request.Provider)
+            ? (_providerNames.Contains("yt-dlp", StringComparer.Ordinal) ? "yt-dlp" : "deterministic")
+            : request.Provider.Trim();
         if (!_providerNames.Contains(providerName, StringComparer.Ordinal))
         {
             return BadRequest(ApiResponse<DownloadJobCreated>.Failure(

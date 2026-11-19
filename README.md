@@ -409,6 +409,11 @@ cover with TagLibSharp, stores the file under `Library__Root`, records a
 archive never fails the job. Tags are written only for newly acquired files;
 files already in the library are not rewritten.
 
+When no provider is specified, production uses `yt-dlp` when it is available. Test-only
+compositions that register only the deterministic provider fall back to that provider;
+deterministic does not deliver audio. Jobs in `NeedsReview` can be opened from Activity,
+reviewed, and approved with one of their stored candidates.
+
 Output paths use `{Artist}/{Title}.mp3` for singles and
 `{Artist}/{Album}/{NN} - {Title}.mp3` when album metadata is present. Active jobs can be
 cancelled cooperatively; provider downloads, transcoding, staging files, and temporary

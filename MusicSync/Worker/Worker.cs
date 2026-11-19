@@ -16,7 +16,7 @@ namespace MusicSync.Worker;
 public sealed class Worker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-    private const string DefaultProviderName = "deterministic";
+    private const string FallbackProviderName = "deterministic";
     private const int MaxCandidates = 10;
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -483,7 +483,9 @@ public sealed class Worker : BackgroundService
 
     private IAcquisitionProvider ResolveProvider(string? name)
     {
-        var key = string.IsNullOrEmpty(name) ? DefaultProviderName : name;
+        var key = string.IsNullOrEmpty(name)
+            ? (_providers.ContainsKey("yt-dlp") ? "yt-dlp" : FallbackProviderName)
+            : name;
         if (!_providers.TryGetValue(key, out var provider))
             throw new InvalidOperationException($"Acquisition provider '{key}' is not registered.");
 

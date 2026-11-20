@@ -365,6 +365,10 @@ The folder layout tells the app the artist and title: `Artist/Title.mp3` or
    that is already in the library is refused with `409`. The file's SHA-256 is checked before the
    cover is embedded; if the same bytes are already stored under another recording, the accept is
    refused with `409` and the file is left untouched.
+
+YouTube link lookup is available from Search by selecting `YouTube link`. Preview accepts a
+canonical YouTube watch URL, reads metadata with yt-dlp without downloading, finds MusicBrainz
+candidates, and lets the user queue a selected match. The final job uses the `yt-dlp` provider.
 4. `POST /api/library/imports/{id}/reject` discards a file.
 5. `PUT /api/library/imports/{id}/path` with `{"relativePath": "..."}` changes the stored path.
    The file is not moved. The new path must stay inside the library and point to an existing file.

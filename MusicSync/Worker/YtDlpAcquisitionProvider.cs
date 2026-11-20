@@ -9,7 +9,7 @@ namespace MusicSync.Worker;
 /// into a temporary work directory. Every argument is passed through ArgumentList; the video URL
 /// is validated and placed after "--" so it cannot be read as an option.
 /// </summary>
-public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider, IVideoSearchProvider
+public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider, IVideoSearchProvider, IYouTubeMetadataProvider
 {
     private readonly ToolOptions _tools;
     private readonly string _workRoot;
@@ -21,6 +21,26 @@ public sealed class YtDlpAcquisitionProvider : IAcquisitionProvider, IVideoSearc
     }
 
     public string Name => "yt-dlp";
+
+    public async Task<YouTubeVideoMetadata> GetMetadataAsync(string url, CancellationToken ct)
+    {
+        if (!YtDlpSearchParser.IsWatchUrl(url))
+            throw new ArgumentException("La URL no es un video de YouTube válido.", nameof(url));
+
+        var startInfo = ExternalProcess.CreateStartInfo(_tools.YtDlp);
+        startInfo.ArgumentList.Add("--no-playlist");
+        startInfo.ArgumentList.Add("--dump-single-json");
+        startInfo.ArgumentList.Add("--skip-download");
+        startInfo.ArgumentList.Add("--no-warnings");
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add(url);
+
+        var (exitCode, stdout, stderr) = await ExternalProcess.RunAsync(startInfo, ct);
+        if (exitCode != 0)
+            throw ToFailure("yt-dlp falló al consultar el video", stderr);
+
+        return YtDlpSearchParser.ParseMetadata(stdout, url);
+    }
 
     public async Task<IReadOnlyList<SourceCandidate>> FindCandidatesAsync(TrackInfo track, int max, CancellationToken ct)
     {

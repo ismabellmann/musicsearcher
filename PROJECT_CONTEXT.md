@@ -298,6 +298,8 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | POST | `/playlists/preview` | Resolve a public Spotify playlist and persist MusicBrainz candidates |
 | GET | `/playlists/{id}` | Read a persisted playlist preview |
 | POST | `/playlists/{id}/enqueue` | Enqueue selected confirmed playlist items |
+| POST | `/youtube/preview` | Read a canonical YouTube watch URL and return parsed metadata plus MusicBrainz candidates |
+| POST | `/youtube/enqueue` | Queue a selected YouTube candidate through the yt-dlp provider |
 | POST | `/downloads` | Enqueue a single track |
 | GET | `/downloads` | List jobs (filter by status) |
 | GET | `/downloads/{id}` | Get a job and its current status |
@@ -311,7 +313,7 @@ All routes under `/api`, JSON, HTTPS, authenticated except `/api/health` and fir
 | POST | `/settings/secrets/generate` | Generate and encrypt an application secret without returning its value |
 | GET | `/analytics/summary?topArtistLimit=10` | Database-backed library, job, completeness, and top-artist summary |
 
-Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns the static UI. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `logout-all`, `password`) are implemented. Search, playlist, album, and artist bulk preview/enqueue endpoints exist. Existing-library scan/import/accept/reject/path-correction, cover backfill, general library list/detail/delete, persisted authenticated SSE events, encrypted settings status/update, application-secret generation, and database-backed analytics are implemented. Final deployment verification remains.
+Implementation status: under `/api/downloads`, create (with optional `provider`), list, detail, approve, cancel, and retry are implemented. Responses use an `ApiResponse<T>` envelope with `status`, `msg`, and `data`. `GET /` returns the static UI. `/api/health` and the auth endpoints (`status`, `setup`, `login`, `logout`, `logout-all`, `password`) are implemented. Search, playlist, album, artist, and YouTube-link preview/enqueue endpoints exist. Existing-library scan/import/accept/reject/path-correction, cover backfill, general library list/detail/delete, persisted authenticated SSE events, encrypted settings status/update, application-secret generation, and database-backed analytics are implemented. Final deployment verification remains.
 
 ## 11. Security requirements (MUST)
 

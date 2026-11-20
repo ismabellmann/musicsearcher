@@ -169,8 +169,13 @@
     button.textContent = "Searching…";
     results.innerHTML = '<div class="loading"><span class="spinner" aria-hidden="true"></span><span>Searching MusicBrainz…</span></div>';
     try {
-      const type = document.querySelector(".search-box select").value.slice(0, -1).toLowerCase();
+      const type = document.querySelector(".search-box select").value;
       lastSearchType = type;
+      if (type === "youtube") {
+        const preview = await api("/api/youtube/preview", { method: "POST", body: JSON.stringify({ url: query }) });
+        renderYouTubePreview(preview);
+        return;
+      }
       const result = await api(`/api/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(query)}`);
       renderResults(result || []);
     } catch (error) {
@@ -189,6 +194,17 @@
       runSearch();
     }
   });
+
+  function renderYouTubePreview(preview) {
+    const target = document.querySelector("#search-results");
+    target.innerHTML = `<article class="card result"><div class="cover">▶</div><div class="details"><div class="title">${escapeHtml(preview.title)}</div><div class="subtitle">${escapeHtml(preview.artistName || preview.uploader || "Unknown artist")} · ${formatDuration(preview.durationMs)}</div></div><span class="badge neutral">YouTube</span></article>` +
+      ((preview.candidates || []).map(candidate => `<article class="card result"><div class="details"><div class="title">${escapeHtml(candidate.title)}</div><div class="subtitle">${escapeHtml(candidate.artistName)} · ${Math.round(candidate.score * 100)}% match</div></div><span class="badge ${candidate.confident ? "success" : "warning"}">${candidate.confident ? "Match" : "Review"}</span><button class="small-button" data-youtube-candidate="${candidate.recordingMbid}">Queue</button></article>`).join("") || '<div class="empty">No confident MusicBrainz candidates found.</div>');
+    target.querySelectorAll("[data-youtube-candidate]").forEach(button => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try { await api("/api/youtube/enqueue", { method: "POST", body: JSON.stringify({ url: preview.sourceUrl, recordingMbid: button.dataset.youtubeCandidate }) }); toast("YouTube video added to queue."); }
+      catch (error) { toast(error.message); button.disabled = false; }
+    }));
+  }
 
   async function loadJobs() {
     try {
@@ -359,6 +375,7 @@
   });
 
   function formatBytes(value) { if (!value) return "0 B"; const units = ["B", "KB", "MB", "GB"]; let index = 0; let size = value; while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; } return `${size.toFixed(index ? 1 : 0)} ${units[index]}`; }
+  function formatDuration(value) { if (!value) return "Duration unavailable"; const seconds = Math.round(value / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
   function debounce(callback, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => callback(...args), delay); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character])); }
   function escapeAttribute(value) { return escapeHtml(value); }

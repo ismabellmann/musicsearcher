@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using MusicSync.Core;
 
 namespace MusicSync.Infrastructure;
 
@@ -62,4 +63,29 @@ public static class YtDlpSearchParser
     }
 
     public static bool IsWatchUrl(string url) => WatchUrlPattern.IsMatch(url);
+
+    public static YouTubeVideoMetadata ParseMetadata(string json, string fallbackUrl)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var id = ReadString(root, "id");
+        if (id is null || !VideoIdPattern.IsMatch(id))
+            throw new InvalidOperationException("yt-dlp no devolvió un identificador de video válido.");
+
+        int? durationMs = null;
+        if (root.TryGetProperty("duration", out var duration) && duration.ValueKind == JsonValueKind.Number)
+            durationMs = (int)Math.Round(duration.GetDouble() * 1000);
+
+        return new YouTubeVideoMetadata(
+            id,
+            ToWatchUrl(id),
+            ReadString(root, "title") ?? string.Empty,
+            ReadString(root, "uploader") ?? ReadString(root, "channel"),
+            durationMs);
+    }
+
+    private static string? ReadString(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

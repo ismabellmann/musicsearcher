@@ -106,6 +106,7 @@ var ytDlpProvider = new YtDlpAcquisitionProvider(
     Path.Combine(libraryOptions.StagingDirectory, "downloads"));
 builder.Services.AddSingleton<IAcquisitionProvider>(ytDlpProvider);
 builder.Services.AddSingleton<IVideoSearchProvider>(ytDlpProvider);
+builder.Services.AddSingleton<IYouTubeMetadataProvider>(ytDlpProvider);
 builder.Services.AddSingleton<Worker>();
 builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<Worker>());
 
@@ -151,6 +152,7 @@ builder.Services.AddScoped<LibraryImportService>();
 builder.Services.AddScoped<LibraryFileService>();
 builder.Services.AddScoped<PlaylistImportService>();
 builder.Services.AddScoped<AnalyticsService>();
+builder.Services.AddScoped<YouTubeLinkService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

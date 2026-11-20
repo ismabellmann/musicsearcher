@@ -66,4 +66,18 @@ public class YtDlpSearchParserTests
     {
         Assert.Throws<ArgumentException>(() => YtDlpSearchParser.ToWatchUrl("--help"));
     }
+
+    [Fact]
+    public void ParseMetadata_MapsSingleVideoFields()
+    {
+        var metadata = YtDlpSearchParser.ParseMetadata(
+            "{\"id\":\"Fozjmwn3htg\",\"title\":\"Artist - Song\",\"uploader\":\"Artist Channel\",\"duration\":201.5}",
+            "https://www.youtube.com/watch?v=Fozjmwn3htg");
+
+        Assert.Equal("Fozjmwn3htg", metadata.VideoId);
+        Assert.Equal("Artist - Song", metadata.RawTitle);
+        Assert.Equal("Artist Channel", metadata.Uploader);
+        Assert.Equal(201500, metadata.DurationMs);
+        Assert.Equal("https://www.youtube.com/watch?v=Fozjmwn3htg", metadata.Url);
+    }
 }

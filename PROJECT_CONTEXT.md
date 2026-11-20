@@ -371,7 +371,7 @@ Progress below reflects the current repository implementation. A passing test/bu
 5. **M5 Playlists and top-N:** Public Spotify playlist parsing, persisted preview/matching, selected enqueue, MusicBrainz album preview/enqueue, and ListenBrainz artist top-recording preview/enqueue are present. 🚧 In progress - live validation against Spotify page variations remains.
 6. **M6 Realtime and library:** ✅ Implemented - `LibraryFile` rows record downloaded and imported files, duplicate admission by recording MBID, SHA-256, and target path is implemented, general listing/detail/delete endpoints are available, and persisted authenticated SSE job events support replay with `Last-Event-ID`. UI integration and event retention maintenance remain.
 7. **M7 Analytics and packaging:** 🚧 In progress - Dockerfile, TrueNAS compose reference, GHCR workflow, non-root UID/GID `568:568`, amd64 image, and pinned yt-dlp `2026.10.26` are implemented. First GHCR publication and NAS deployment remain to be verified.
-8. **M8 UI:** 🚧 In progress - dependency-free static frontend with Search, Activity, Library, Playlists, Settings, authentication, responsive layout, and system/light/dark theme toggle.
+8. **M8 UI:** 🚧 In progress - dependency-free static frontend with Search, Activity, Library, Playlists, Analytics, Settings, authentication, responsive layout, and system/light/dark theme toggle. The next UI slice is the album library view with ratings and genre metadata.
 
 ### Recommended implementation order
 
@@ -424,6 +424,42 @@ final `File.Move` stays on the same filesystem as the library. Library scans exp
 that directory.
 
 Remaining after this slice: targeted security follow-ups, UI API polish, and final deployment verification.
+
+### Next planned slice: album library, ratings, and genre metadata (M6/M8)
+
+Adapt the existing lightweight UI toward the `mi_biblioteca_v3.html` visual language while keeping
+the no-framework/no-build/resource-conscious architecture:
+
+- Add an album-oriented library API that groups `LibraryFile`/`Track` rows by release-group MBID,
+  with a stable normalized artist+album fallback key when no MBID exists.
+- Expose album title, primary/all artists, year, release-group MBID, track count, owned count,
+  completeness, total size, cover availability, rating, notes, and genre.
+- Add an SQLite `Ratings` entity and EF migration with `TargetType`, `TargetKey`, `RatingValue`
+  (`0` to `5`), optional notes, and created/updated timestamps. Enforce one rating per target with
+  a unique `(TargetType, TargetKey)` index. The model supports `album` and `track`, while the first
+  UI focuses on album ratings.
+- Use target keys `album:{release-group-mbid}` and `track:{recording-mbid}`. Albums without a
+  release-group MBID use a deterministic hash of normalized primary artist and album title.
+- Add authenticated rating endpoints: `GET`, `PUT`, and `DELETE /api/ratings/{targetType}/{targetKey}`.
+  Ratings of `0` or DELETE clear the rating; notes are bounded and never stored in localStorage.
+- Add `GET /api/library/albums` and `/api/library/albums/{key}` with pagination, search, and sorting
+  by title, artist, year, rating, and completeness.
+- Extend `TrackInfo`, `Track`, search results, library details, album views, and MusicBrainz parsing
+  with optional normalized genre data. Preserve multiple genres as `; `-joined text when available.
+  If MusicBrainz has no genre, the API/UI displays `—` and does not invent a value.
+- Replace the current file-first library view with the adapted album grid/list, tag/filter toolbar,
+  CSS star display, album detail modal, rating editor, notes, track list, and completeness progress.
+- Extend analytics with rated/unrated album counts, average album rating, and top-rated albums.
+
+Constraints:
+- No external fonts, icon libraries, frontend frameworks, or build step.
+- Use existing CSS variables and theme toggle; add the warm paper/orange and vinyl-inspired visual
+  treatment without copying the prototype's localStorage data model or external iTunes requests.
+- Existing tracks without genre metadata remain valid and display `—`; metadata backfill can be a
+  later operation using recording MBIDs.
+
+Tests required: rating CRUD/validation, unique target updates, stable fallback keys, album grouping,
+completeness, genre parsing/fallback, API authorization, and UI/API smoke coverage.
 
 ## 15. Open questions (ask the owner before assuming)
 

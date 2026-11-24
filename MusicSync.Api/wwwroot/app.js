@@ -5,6 +5,7 @@
   const themeButton = document.querySelector("#theme-toggle");
   const themes = ["default", "winamp", "vinyl", "neon", "paper", "brutalist"];
   const themeLabels = { default: "Default", winamp: "Winamp", vinyl: "Vinyl", neon: "Neon", paper: "Paper", brutalist: "Brutalist" };
+  let mode = localStorage.getItem("musicsync-mode") || "light";
   let eventSource;
   let toastTimer;
   let lastSearchType = "track";
@@ -13,20 +14,29 @@
   function setTheme(theme) {
     root.dataset.theme = theme;
     localStorage.setItem("musicsync-theme", theme);
-    themeButton.textContent = `◐ Theme: ${themeLabels[theme]}`;
+    if (themeButton) themeButton.textContent = `${mode === "dark" ? "◐" : "☼"} ${themeLabels[theme]} · ${mode}`;
+  }
+
+  function setMode(value) {
+    mode = value === "dark" ? "dark" : "light";
+    root.dataset.mode = mode;
+    localStorage.setItem("musicsync-mode", mode);
+    setTheme(root.dataset.theme || "default");
+    document.querySelectorAll("[data-mode-choice]").forEach(button => button.classList.toggle("active", button.dataset.modeChoice === mode));
   }
 
   function updateThemeChoices() {
     document.querySelectorAll("[data-theme-choice]").forEach(button => button.classList.toggle("active", button.dataset.themeChoice === root.dataset.theme));
   }
+  setMode(mode);
   setTheme(localStorage.getItem("musicsync-theme") || "default");
   updateThemeChoices();
   themeButton?.addEventListener("click", () => {
     const current = themes.indexOf(root.dataset.theme);
-    setTheme(themes[(current + 1) % themes.length]);
-    updateThemeChoices();
+    setMode(mode === "dark" ? "light" : "dark");
   });
   document.querySelectorAll("[data-theme-choice]").forEach(button => button.addEventListener("click", () => { setTheme(button.dataset.themeChoice); updateThemeChoices(); }));
+  document.querySelectorAll("[data-mode-choice]").forEach(button => button.addEventListener("click", () => setMode(button.dataset.modeChoice)));
 
   function toast(message) {
     const element = document.querySelector("#toast");

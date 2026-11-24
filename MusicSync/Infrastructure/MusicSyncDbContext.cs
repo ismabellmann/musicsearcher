@@ -24,6 +24,7 @@ public class MusicSyncDbContext : DbContext
     public DbSet<PlaylistImport> PlaylistImports { get; set; } = null!;
     public DbSet<PlaylistImportItem> PlaylistImportItems { get; set; } = null!;
     public DbSet<DownloadJobEvent> DownloadJobEvents { get; set; } = null!;
+    public DbSet<Rating> Ratings { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,11 @@ public class MusicSyncDbContext : DbContext
         {
             entity.HasIndex(item => new { item.JobId, item.Id });
             entity.HasIndex(item => item.CreatedAt);
+        });
+
+        modelBuilder.Entity<Rating>(entity =>
+        {
+            entity.HasIndex(item => new { item.TargetType, item.TargetKey }).IsUnique();
         });
 
         modelBuilder.Entity<DownloadJobCandidate>(entity =>

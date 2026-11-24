@@ -268,7 +268,12 @@
       const origin = document.querySelector("#library-origin")?.value || "";
       const result = await api(`/api/library?page=1&pageSize=50&q=${encodeURIComponent(q)}&origin=${encodeURIComponent(origin)}`);
       const target = document.querySelector("[data-page=library] .cards");
-      target.innerHTML = (result.items || []).map(file => `<article class="card file"><div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(file.title)}</div><div class="subtitle">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")} · ${formatBytes(file.sizeBytes)}</div></div><span class="badge neutral">${escapeHtml(file.origin)}</span><div class="actions"><button class="small-button" data-detail="${file.fileId}">Details</button><button class="small-button" data-delete="${file.fileId}">Delete</button></div></article>`).join("") || '<div class="empty">Your library is empty.</div>';
+      const items = await Promise.all((result.items || []).map(async file => ({ file, rating: await api(`/api/ratings/track/track:${file.recordingMbid}`).catch(() => ({ value: 0 })) })));
+      target.innerHTML = items.map(({ file, rating }) => `<article class="card file"><div class="cover">♫</div><div class="details"><div class="title">${escapeHtml(file.title)}</div><div class="subtitle">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")} · ${formatBytes(file.sizeBytes)}</div><div class="subtitle">MusicBrainz: ${formatScore(file.musicBrainzRating)} · My score: ${formatScore(file.personalRating)}</div><div class="rating-stars" aria-label="My rating ${file.personalRating} of 5">${[1,2,3,4,5].map(value => `<button class="rating-star ${value <= file.personalRating ? "on" : ""}" data-rating="${file.recordingMbid}" data-value="${value}" aria-label="Rate ${value} out of 5">★</button>`).join("")}</div></div><span class="badge neutral">${escapeHtml(file.origin)}</span><div class="actions"><button class="small-button" data-detail="${file.fileId}">Details</button><button class="small-button" data-delete="${file.fileId}">Delete</button></div></article>`).join("") || '<div class="empty">Your library is empty.</div>';
+      target.querySelectorAll("[data-rating]").forEach(button => button.addEventListener("click", async () => {
+        try { await api(`/api/ratings/track/track:${button.dataset.rating}`, { method: "PUT", body: JSON.stringify({ value: Number(button.dataset.value), notes: null }) }); toast("Rating saved."); await loadLibrary(); }
+        catch (error) { toast(error.message); }
+      }));
       target.querySelectorAll("[data-detail]").forEach(button => button.addEventListener("click", () => showLibraryDetail(button.dataset.detail)));
       target.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", async () => {
         if (!confirm("Delete this file from the library?")) return;
@@ -376,6 +381,7 @@
 
   function formatBytes(value) { if (!value) return "0 B"; const units = ["B", "KB", "MB", "GB"]; let index = 0; let size = value; while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; } return `${size.toFixed(index ? 1 : 0)} ${units[index]}`; }
   function formatDuration(value) { if (!value) return "Duration unavailable"; const seconds = Math.round(value / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
+  function formatScore(value) { return value == null || value === 0 ? "—" : `${Number(value).toFixed(1)}/5`; }
   function debounce(callback, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => callback(...args), delay); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character])); }
   function escapeAttribute(value) { return escapeHtml(value); }

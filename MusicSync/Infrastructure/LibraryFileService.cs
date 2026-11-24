@@ -74,9 +74,24 @@ public sealed class LibraryFileService
                 item.file.AddedAt,
                 item.imported != null ? "imported" : "downloaded",
                 item.track.SourceUrl,
-                Array.Empty<string>()))
+                Array.Empty<string>(), item.track.MusicBrainzRating, 0, null))
             .ToListAsync(ct);
 
+        var trackIds = rows.Select(item => item.TrackId).ToArray();
+        var recordingKeys = await _db.Tracks.AsNoTracking()
+            .Where(track => trackIds.Contains(track.Id))
+            .Select(track => new { track.Id, Key = RatingService.TrackKey(track.RecordingMbid) })
+            .ToListAsync(ct);
+        var keys = recordingKeys.Select(item => item.Key).ToArray();
+        var ratings = await _db.Ratings.AsNoTracking()
+            .Where(item => item.TargetType == "track" && keys.Contains(item.TargetKey))
+            .ToDictionaryAsync(item => item.TargetKey, ct);
+        rows = rows.Select(row =>
+        {
+            var key = recordingKeys.FirstOrDefault(item => item.Id == row.TrackId)?.Key;
+            ratings.TryGetValue(key ?? string.Empty, out var rating);
+            return row with { PersonalRating = rating?.Value ?? 0, PersonalNotes = rating?.Notes };
+        }).ToList();
         return new LibraryFilePage(rows, page, pageSize, total);
     }
 
@@ -96,7 +111,7 @@ public sealed class LibraryFileService
                                 track.Year, track.Isrc, track.DurationMs, file.Format,
                                 file.Bitrate, file.SizeBytes, file.Sha256, file.AddedAt,
                                 imported != null ? "imported" : "downloaded", track.SourceUrl,
-                                Array.Empty<string>()))
+                                Array.Empty<string>(), track.MusicBrainzRating, 0, null))
             .SingleOrDefaultAsync(ct);
         if (result is not null)
         {
@@ -108,6 +123,12 @@ public sealed class LibraryFileService
                     .Join(_db.Artists.AsNoTracking(), item => item.ArtistId, artist => artist.Id, (_, artist) => artist.Name)
                     .ToListAsync(ct)
             };
+        }
+        if (result is not null)
+        {
+            var rating = await _db.Ratings.AsNoTracking().SingleOrDefaultAsync(item =>
+                item.TargetType == "track" && item.TargetKey == RatingService.TrackKey(result.RecordingMbid), ct);
+            result = result with { PersonalRating = rating?.Value ?? 0, PersonalNotes = rating?.Notes };
         }
         return result;
     }
@@ -182,7 +203,10 @@ public sealed record LibraryFileView(
     DateTime AddedAt,
     string Origin,
     string? SourceUrl,
-    IReadOnlyList<string> Artists);
+    IReadOnlyList<string> Artists,
+    double? MusicBrainzRating = null,
+    int PersonalRating = 0,
+    string? PersonalNotes = null);
 
 public enum DeleteLibraryFileOutcome
 {

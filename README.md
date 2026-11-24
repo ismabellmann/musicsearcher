@@ -369,6 +369,12 @@ The folder layout tells the app the artist and title: `Artist/Title.mp3` or
 YouTube link lookup is available from Search by selecting `YouTube link`. Preview accepts a
 canonical YouTube watch URL, reads metadata with yt-dlp without downloading, finds MusicBrainz
 candidates, and lets the user queue a selected match. The final job uses the `yt-dlp` provider.
+
+Library ratings use a five-star personal scale persisted in SQLite. Track cards show the
+MusicBrainz community score when that metadata is available, followed by the personal score;
+missing MusicBrainz scores display `—`. Album summaries are available at
+`GET /api/library/albums`, and their personal score is the average of the personal ratings of
+all tracks in the album.
 4. `POST /api/library/imports/{id}/reject` discards a file.
 5. `PUT /api/library/imports/{id}/path` with `{"relativePath": "..."}` changes the stored path.
    The file is not moved. The new path must stay inside the library and point to an existing file.

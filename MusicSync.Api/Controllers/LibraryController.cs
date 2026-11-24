@@ -71,13 +71,13 @@ public sealed class LibraryController : ControllerBase
 
     private static LibraryFileSummary ToSummary(LibraryFileView file) => new(
         file.Id, file.RelativePath, file.Title, file.ArtistName, file.AlbumTitle,
-        file.Format, file.SizeBytes, file.AddedAt, file.Origin);
+        file.Format, file.SizeBytes, file.AddedAt, file.Origin, file.MusicBrainzRating, file.PersonalRating);
 
     private static LibraryFileDetail ToDetail(LibraryFileView file) => new(
         file.Id, file.RelativePath, file.RecordingMbid, file.Title, file.ArtistName,
         file.AlbumTitle, file.ReleaseGroupMbid, file.Year, file.Isrc, file.DurationMs,
         file.Format, file.Bitrate, file.SizeBytes, file.Sha256, file.AddedAt,
-        file.Origin, file.SourceUrl, file.Artists);
+        file.Origin, file.SourceUrl, file.Artists, file.MusicBrainzRating, file.PersonalRating, file.PersonalNotes);
 
     [HttpPost("scan")]
     public async Task<ActionResult<ApiResponse<ScanSummary>>> Scan(CancellationToken ct)
@@ -284,7 +284,9 @@ public sealed record LibraryFileSummary(
     string? Format,
     long SizeBytes,
     DateTime AddedAt,
-    string Origin);
+    string Origin,
+    double? MusicBrainzRating,
+    int PersonalRating);
 
 public sealed record LibraryFileDetail(
     int FileId,
@@ -304,4 +306,7 @@ public sealed record LibraryFileDetail(
     DateTime AddedAt,
     string Origin,
     string? SourceUrl,
-    IReadOnlyList<string> Artists);
+    IReadOnlyList<string> Artists,
+    double? MusicBrainzRating,
+    int PersonalRating,
+    string? PersonalNotes);

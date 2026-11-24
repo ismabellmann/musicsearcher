@@ -56,6 +56,7 @@ public static class TrackCatalog
         Year = track.Year,
         Isrc = track.Isrc,
         DurationMs = track.DurationMs,
+        MusicBrainzRating = track.MusicBrainzRating,
         Artists = track.TrackArtists
             .OrderBy(link => link.Position)
             .Select(link => new ArtistCredit(link.Artist.Name, link.Artist.Mbid ?? Guid.Empty))

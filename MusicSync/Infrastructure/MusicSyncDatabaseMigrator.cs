@@ -13,14 +13,14 @@ public static class MusicSyncDatabaseMigrator
     private static readonly string[] MigrationOnlyTables =
     {
         "TrackArtists", "DownloadJobCandidates", "LibraryImports", "LibraryImportCandidates",
-        "PlaylistImports", "PlaylistImportItems", "DownloadJobEvents"
+        "PlaylistImports", "PlaylistImportItems", "DownloadJobEvents", "Ratings"
     };
 
     // Columns added after InitialCreate, keyed by table.
     private static readonly Dictionary<string, string[]> MigrationOnlyColumns = new(StringComparer.Ordinal)
     {
         ["DownloadJobs"] = new[] { "NextAttemptAt", "AutomaticRetries" },
-        ["Tracks"] = new[] { "SourceUrl", "ReleaseGroupMbid", "Year" },
+        ["Tracks"] = new[] { "SourceUrl", "ReleaseGroupMbid", "Year", "MusicBrainzRating" },
         ["UserAccounts"] = new[] { "SecurityStamp" }
     };
 

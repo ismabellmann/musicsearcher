@@ -427,9 +427,25 @@ that directory.
 
 Remaining after this slice: targeted security follow-ups, UI API polish, and final deployment verification.
 
-### Next planned slice: album library, ratings, and genre metadata (M6/M8)
+### Completed slice: ratings baseline and album score aggregation (M6/M8)
 
-Adapt the existing lightweight UI toward the `mi_biblioteca_v3.html` visual language while keeping
+Implemented the SQLite-backed rating baseline while adapting the existing lightweight UI toward the `mi_biblioteca_v3.html` visual language:
+
+- `Ratings` stores one 0–5 personal rating and optional notes per `track` or `album` target,
+  with a unique `(TargetType, TargetKey)` index. Track star controls in the Library UI persist
+  through the authenticated rating API; ratings are not stored in localStorage.
+- `GET/PUT/DELETE /api/ratings/{targetType}/{targetKey}` provide idempotent rating CRUD.
+- `GET /api/library/albums` groups album files by release-group MBID or a stable normalized
+  artist/album fallback key. Album `PersonalRating` is the arithmetic average of every track's
+  personal rating (unrated tracks count as zero), and `MusicBrainzRating` is the average of
+  available MusicBrainz track ratings.
+- `TrackInfo`/`Track` carry optional `MusicBrainzRating`, parsed from MusicBrainz rating payloads
+  when the provider supplies it. Missing scores remain `NULL` and the UI displays `—`.
+
+Remaining UI work is to replace the current file-first Library view with the album grid/list and
+album rating modal. Keep the existing lightweight architecture and visual language:
+
+- Adapt the existing lightweight UI toward the `mi_biblioteca_v3.html` visual language while keeping
 the no-framework/no-build/resource-conscious architecture:
 
 - Add an album-oriented library API that groups `LibraryFile`/`Track` rows by release-group MBID,

@@ -266,7 +266,7 @@ public class MusicBrainzClient : IMetadataProvider
 
     private System.Uri BuildReleaseUri(Guid releaseMbid)
     {
-        return new System.Uri($"https://musicbrainz.org/ws/2/release/{releaseMbid}?inc=recordings+artist-credits&fmt=json", System.UriKind.Absolute);
+        return new System.Uri($"https://musicbrainz.org/ws/2/release/{releaseMbid}?inc=recordings+artist-credits+ratings&fmt=json", System.UriKind.Absolute);
     }
 
     private static Guid ParseFirstReleaseId(string json)
@@ -367,7 +367,8 @@ public class MusicBrainzClient : IMetadataProvider
             ReleaseGroupMbid = releaseGroupMbid == Guid.Empty ? null : releaseGroupMbid,
             Year = year ?? ReadYear(release),
             TrackNumber = trackNumber,
-            DurationMs = ReadInt(recording, "length") ?? 0
+            DurationMs = ReadInt(recording, "length") ?? 0,
+            MusicBrainzRating = ReadRating(recording)
         };
     }
 
@@ -469,5 +470,14 @@ public class MusicBrainzClient : IMetadataProvider
 
         var date = ReadString(element, "first-release-date") ?? ReadString(element, "date");
         return date is not null && int.TryParse(date[..Math.Min(4, date.Length)], out var year) ? year : null;
+    }
+
+    private static double? ReadRating(JsonElement element)
+    {
+        if (!element.TryGetProperty("rating", out var rating) || rating.ValueKind != JsonValueKind.Object)
+            return null;
+        return rating.TryGetProperty("value", out var value) && value.TryGetDouble(out var result)
+            ? result
+            : null;
     }
 }

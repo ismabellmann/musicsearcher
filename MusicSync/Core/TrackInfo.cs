@@ -51,6 +51,9 @@ public record TrackInfo
     /// <summary>Gets or sets the duration in milliseconds.</summary>
     public int DurationMs { get; init; }
 
+    /// <summary>Community rating returned by MusicBrainz when available (0-5).</summary>
+    public double? MusicBrainzRating { get; init; }
+
     /// <summary>
     /// Gets a value indicating whether this track is a single (no album).
     /// Determined by checking if AlbumTitle is null/empty AND Artists count is small.

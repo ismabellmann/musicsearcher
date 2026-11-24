@@ -464,6 +464,43 @@ namespace MusicSync.Infrastructure.Migrations
                     b.ToTable("PlaylistImportItems");
                 });
 
+            modelBuilder.Entity("MusicSync.Infrastructure.Rating", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetType", "TargetKey")
+                        .IsUnique();
+
+                    b.ToTable("Ratings");
+                });
+
             modelBuilder.Entity("MusicSync.Infrastructure.Setting", b =>
                 {
                     b.Property<string>("Key")
@@ -501,6 +538,9 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Property<string>("Isrc")
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
+
+                    b.Property<double?>("MusicBrainzRating")
+                        .HasColumnType("real");
 
                     b.Property<Guid>("RecordingMbid")
                         .HasColumnType("TEXT");

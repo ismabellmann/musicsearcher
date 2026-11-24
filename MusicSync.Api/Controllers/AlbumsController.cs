@@ -17,4 +17,13 @@ public sealed class AlbumsController : ControllerBase
         var albums = await _albums.ListAsync(ct);
         return Ok(ApiResponse<IReadOnlyList<AlbumLibraryView>>.Success(200, "Álbumes consultados.", albums));
     }
+
+    [HttpGet("{*key}")]
+    public async Task<ActionResult<ApiResponse<AlbumLibraryDetail>>> Get(string key, CancellationToken ct)
+    {
+        var album = await _albums.GetAsync(key, ct);
+        return album is null
+            ? NotFound(ApiResponse<AlbumLibraryDetail>.Failure(404, "No se encontró el álbum."))
+            : Ok(ApiResponse<AlbumLibraryDetail>.Success(200, "Álbum consultado.", album));
+    }
 }

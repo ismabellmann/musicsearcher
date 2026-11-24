@@ -180,6 +180,16 @@
     .rating-stars { display: flex; gap: 1px; margin-top: 6px; }
     .rating-star { border: 0; padding: 0 1px; color: var(--border); background: transparent; font-size: 15px; line-height: 1; cursor: pointer; }
     .rating-star.on { color: var(--star); }
+    .album-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:14px; }
+    .album-card { border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); overflow:hidden; cursor:pointer; box-shadow:var(--shadow); }
+    .album-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+    .album-art { aspect-ratio:1; display:grid; place-items:center; font-size:42px; background:linear-gradient(135deg,var(--accent),#8a4b28); color:#fff; }
+    .album-info { padding:10px; }
+    .album-title { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .album-meta { color:var(--muted); font-family:var(--font-mono); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:3px; }
+    .album-progress { height:4px; background:var(--surface-2); margin-top:8px; overflow:hidden; }
+    .album-progress span { display:block; height:100%; background:var(--accent); }
+    .library-header-actions { display:flex; gap:8px; align-items:center; }
     .badge.neutral { color: var(--muted); background: var(--surface-2); }
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px; }
     .stat { padding: 16px; }
@@ -337,10 +347,8 @@
 
         <section class="view" data-page="library">
           <div class="hero"><span class="eyebrow">Your files</span><h1>Library</h1><p>Browse imported and acquired music without exposing filesystem details.</p></div>
-          <div class="toolbar"><input id="library-filter" placeholder="Filter by title, artist, album" aria-label="Filter library" style="max-width:360px"><div class="toolbar-actions"><select id="library-origin" aria-label="Library origin"><option value="">All files</option><option value="imported">Imported</option><option value="downloaded">Downloaded</option></select><button class="ghost-button" id="library-scan" style="width:auto">Scan library</button></div></div>
-          <div class="cards">
-            <div class="empty">Loading library…</div>
-          </div>
+          <div class="toolbar"><input id="library-filter" placeholder="Filter by album or artist" aria-label="Filter albums" style="max-width:360px"><div class="library-header-actions"><select id="album-sort" aria-label="Sort albums"><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="rating">My rating</option><option value="completeness">Completeness</option></select><button class="small-button" id="album-grid-view" aria-label="Grid view">⊞</button><button class="small-button" id="album-list-view" aria-label="List view">☰</button><button class="ghost-button" id="library-scan" style="width:auto">Scan library</button></div></div>
+          <div id="album-container"><div class="empty">Loading albums…</div></div>
         </section>
 
         <section class="view" data-page="playlists">

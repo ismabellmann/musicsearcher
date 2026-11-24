@@ -10,6 +10,7 @@
   let toastTimer;
   let lastSearchType = "track";
   let playlistPreview;
+  let albumView = "grid";
 
   function setTheme(theme) {
     root.dataset.theme = theme;
@@ -126,7 +127,7 @@
     document.querySelector("#sidebar")?.classList.remove("open");
     if (view === "activity") startEvents(); else stopEvents();
     if (view === "activity") loadJobs();
-    if (view === "library") loadLibrary();
+    if (view === "library") loadAlbums();
     if (view === "settings") loadSettings();
     if (view === "analytics") loadAnalytics();
   }
@@ -299,6 +300,36 @@
     } catch (error) { toast(error.message); }
   }
 
+  async function loadAlbums() {
+    try {
+      const albums = await api("/api/library/albums");
+      const query = (document.querySelector("#library-filter")?.value || "").toLowerCase();
+      const sort = document.querySelector("#album-sort")?.value || "title";
+      const filtered = (albums || []).filter(album => `${album.title} ${album.artistName}`.toLowerCase().includes(query)).sort((a, b) => {
+        if (sort === "artist") return a.artistName.localeCompare(b.artistName) || a.title.localeCompare(b.title);
+        if (sort === "rating") return b.personalRating - a.personalRating;
+        if (sort === "completeness") return b.completeness - a.completeness;
+        return a.title.localeCompare(b.title);
+      });
+      const target = document.querySelector("#album-container");
+      target.className = albumView === "grid" ? "album-grid" : "cards";
+      target.innerHTML = filtered.map(album => `<article class="${albumView === "grid" ? "album-card" : "card file"}" data-album-key="${encodeURIComponent(album.albumKey)}">
+        <div class="${albumView === "grid" ? "album-art" : "cover"}">♫</div><div class="${albumView === "grid" ? "album-info" : "details"}"><div class="${albumView === "grid" ? "album-title" : "title"}">${escapeHtml(album.title)}</div><div class="${albumView === "grid" ? "album-meta" : "subtitle"}">${escapeHtml(album.artistName)} · ${album.ownedFileCount}/${album.trackCount} tracks</div><div class="album-meta">MB: ${formatScore(album.musicBrainzRating)} · My: ${formatScore(album.personalRating)}</div><div class="album-progress"><span style="width:${Math.round(album.completeness * 100)}%"></span></div></div>
+      </article>`).join("") || '<div class="empty">No albums found.</div>';
+      target.querySelectorAll("[data-album-key]").forEach(card => card.addEventListener("click", () => showAlbumDetail(decodeURIComponent(card.dataset.albumKey))));
+    } catch (error) { toast(error.message); }
+  }
+
+  async function showAlbumDetail(key) {
+    try {
+      const detail = await api(`/api/library/albums/${encodeURIComponent(key)}`);
+      const album = detail.album;
+      const dialog = document.createElement("dialog"); dialog.className = "modal";
+      dialog.innerHTML = `<form method="dialog" style="padding:22px"><h2>${escapeHtml(album.title)}</h2><p style="margin-top:6px">${escapeHtml(album.artistName)} · ${album.year || "—"}</p><p class="hint" style="margin-top:10px">MusicBrainz: ${formatScore(album.musicBrainzRating)} · My album average: ${formatScore(album.personalRating)}<br>${album.ownedFileCount}/${album.trackCount} tracks · ${Math.round(album.completeness * 100)}% complete</p><div class="cards" style="margin-top:16px">${detail.tracks.map(track => `<div class="result"><div class="details"><div class="title">${escapeHtml(track.title)}</div><div class="subtitle">MusicBrainz: ${formatScore(track.musicBrainzRating)} · My score: ${formatScore(track.personalRating)}</div></div></div>`).join("")}</div><div class="modal-actions"><button class="primary-button">Close</button></div></form>`;
+      document.body.append(dialog); dialog.showModal(); dialog.addEventListener("close", () => dialog.remove());
+    } catch (error) { toast(error.message); }
+  }
+
   async function showLibraryDetail(id) {
     try {
       const file = await api(`/api/library/${id}`);
@@ -406,11 +437,13 @@
   });
 
   document.querySelector("#library-scan")?.addEventListener("click", async () => {
-    try { const result = await api("/api/library/scan", { method: "POST", body: "{}" }); toast(result ? "Library scan complete." : "Library scan complete."); await loadLibrary(); }
+    try { await api("/api/library/scan", { method: "POST", body: "{}" }); toast("Library scan complete."); await loadAlbums(); }
     catch (error) { toast(error.message); }
   });
-  document.querySelector("#library-filter")?.addEventListener("input", debounce(loadLibrary, 300));
-  document.querySelector("#library-origin")?.addEventListener("change", loadLibrary);
+  document.querySelector("#library-filter")?.addEventListener("input", debounce(loadAlbums, 300));
+  document.querySelector("#album-sort")?.addEventListener("change", loadAlbums);
+  document.querySelector("#album-grid-view")?.addEventListener("click", () => { albumView = "grid"; loadAlbums(); });
+  document.querySelector("#album-list-view")?.addEventListener("click", () => { albumView = "list"; loadAlbums(); });
 
   document.querySelector("#logout")?.addEventListener("click", async () => {
     try { await api("/api/auth/logout", { method: "POST", body: "{}" }); await showAuth(); } catch (error) { toast(error.message); }

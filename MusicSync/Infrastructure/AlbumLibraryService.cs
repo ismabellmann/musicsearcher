@@ -48,6 +48,31 @@ public sealed class AlbumLibraryService
             .ToList();
     }
 
+    public async Task<AlbumLibraryDetail?> GetAsync(string key, CancellationToken ct)
+    {
+        var albums = await ListAsync(ct);
+        var album = albums.SingleOrDefault(item => item.AlbumKey == key);
+        if (album is null) return null;
+
+        var rows = await (from file in _db.LibraryFiles.AsNoTracking()
+                          join track in _db.Tracks.AsNoTracking() on file.TrackId equals track.Id
+                          where track.AlbumTitle == album.Title && track.ArtistName == album.ArtistName
+                          select new { file, track })
+            .OrderBy(item => item.track.Year).ThenBy(item => item.track.Title)
+            .ToListAsync(ct);
+        var ids = rows.Select(item => item.track.RecordingMbid).ToArray();
+        var ratings = await _db.Ratings.AsNoTracking()
+            .Where(item => item.TargetType == "track" && ids.Select(id => RatingService.TrackKey(id)).Contains(item.TargetKey))
+            .ToDictionaryAsync(item => item.TargetKey, ct);
+
+        return new AlbumLibraryDetail(
+            album,
+            rows.Select(item => new AlbumTrackView(
+                item.track.Id, item.track.Title, item.track.ArtistName, item.file.RelativePath,
+                item.track.MusicBrainzRating,
+                ratings.TryGetValue(RatingService.TrackKey(item.track.RecordingMbid), out var rating) ? rating.Value : 0)).ToList());
+    }
+
     private static string Normalize(string value) => string.Join('-', value.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
 }
 
@@ -63,3 +88,6 @@ public sealed record AlbumLibraryView(
     double? MusicBrainzRating,
     double PersonalRating,
     long SizeBytes);
+
+public sealed record AlbumLibraryDetail(AlbumLibraryView Album, IReadOnlyList<AlbumTrackView> Tracks);
+public sealed record AlbumTrackView(int TrackId, string Title, string ArtistName, string RelativePath, double? MusicBrainzRating, int PersonalRating);

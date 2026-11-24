@@ -3,8 +3,8 @@
 
   const root = document.documentElement;
   const themeButton = document.querySelector("#theme-toggle");
-  const themes = ["system", "light", "dark"];
-  const themeLabels = { system: "System", light: "Light", dark: "Dark" };
+  const themes = ["default", "winamp", "vinyl", "neon", "paper", "brutalist"];
+  const themeLabels = { default: "Default", winamp: "Winamp", vinyl: "Vinyl", neon: "Neon", paper: "Paper", brutalist: "Brutalist" };
   let eventSource;
   let toastTimer;
   let lastSearchType = "track";
@@ -16,11 +16,17 @@
     themeButton.textContent = `◐ Theme: ${themeLabels[theme]}`;
   }
 
-  setTheme(localStorage.getItem("musicsync-theme") || "system");
+  function updateThemeChoices() {
+    document.querySelectorAll("[data-theme-choice]").forEach(button => button.classList.toggle("active", button.dataset.themeChoice === root.dataset.theme));
+  }
+  setTheme(localStorage.getItem("musicsync-theme") || "default");
+  updateThemeChoices();
   themeButton?.addEventListener("click", () => {
     const current = themes.indexOf(root.dataset.theme);
     setTheme(themes[(current + 1) % themes.length]);
+    updateThemeChoices();
   });
+  document.querySelectorAll("[data-theme-choice]").forEach(button => button.addEventListener("click", () => { setTheme(button.dataset.themeChoice); updateThemeChoices(); }));
 
   function toast(message) {
     const element = document.querySelector("#toast");
@@ -288,8 +294,29 @@
       const file = await api(`/api/library/${id}`);
       const dialog = document.createElement("dialog");
       dialog.className = "modal";
-      dialog.innerHTML = `<form method="dialog" style="padding:22px"><h2>${escapeHtml(file.title)}</h2><p style="margin-top:8px">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")}</p><p class="hint" style="margin-top:12px">${escapeHtml(file.relativePath)}<br>${formatBytes(file.sizeBytes)} · ${escapeHtml(file.origin)}<br>Recording: ${escapeHtml(file.recordingMbid)}</p><div class="modal-actions"><button class="primary-button">Close</button></div></form>`;
-      document.body.append(dialog); dialog.showModal(); dialog.addEventListener("close", () => dialog.remove());
+      dialog.innerHTML = `<form id="rating-form" style="padding:22px"><h2>${escapeHtml(file.title)}</h2><p style="margin-top:8px">${escapeHtml(file.artistName)} · ${escapeHtml(file.albumTitle || "Single")}</p><p class="hint" style="margin-top:12px">${escapeHtml(file.relativePath)}<br>${formatBytes(file.sizeBytes)} · ${escapeHtml(file.origin)}<br>Recording: ${escapeHtml(file.recordingMbid)}</p><div style="margin-top:18px"><div class="subtitle">${file.musicBrainzRating == null || file.musicBrainzRating === 0 ? "" : `MusicBrainz score: ${formatScore(file.musicBrainzRating)}`}</div><div class="subtitle" style="margin-top:6px">My score: <span id="detail-score-label">${formatScore(file.personalRating)}</span></div><div class="rating-stars" id="detail-stars" style="margin-top:8px">${[1,2,3,4,5].map(value => `<button type="button" class="rating-star ${value <= file.personalRating ? "on" : ""}" data-detail-rating="${value}" aria-label="Rate ${value} out of 5">★</button>`).join("")}</div><textarea id="detail-notes" placeholder="Personal notes" style="width:100%;margin-top:12px;min-height:70px">${escapeHtml(file.personalNotes || "")}</textarea></div><div class="modal-actions"><button type="button" class="ghost-button" id="detail-clear">Clear rating</button><button type="button" class="ghost-button" id="detail-close">Close</button><button type="submit" class="primary-button">Save rating</button></div></form>`;
+      document.body.append(dialog); dialog.showModal();
+      let selectedRating = file.personalRating || 0;
+      const updateStars = () => {
+        dialog.querySelectorAll("[data-detail-rating]").forEach(button => button.classList.toggle("on", Number(button.dataset.detailRating) <= selectedRating));
+        dialog.querySelector("#detail-score-label").textContent = formatScore(selectedRating);
+      };
+      dialog.querySelectorAll("[data-detail-rating]").forEach(button => button.addEventListener("click", () => { selectedRating = Number(button.dataset.detailRating); updateStars(); }));
+      dialog.querySelector("#detail-clear").addEventListener("click", () => { selectedRating = 0; updateStars(); });
+      dialog.querySelector("#detail-close").addEventListener("click", () => dialog.close());
+      dialog.querySelector("#rating-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        try {
+          const notes = dialog.querySelector("#detail-notes").value;
+          if (selectedRating === 0 && !notes.trim()) {
+            await api(`/api/ratings/track/track:${file.recordingMbid}`, { method: "DELETE" });
+          } else {
+            await api(`/api/ratings/track/track:${file.recordingMbid}`, { method: "PUT", body: JSON.stringify({ value: selectedRating, notes }) });
+          }
+          dialog.close(); toast("Rating saved."); await loadLibrary();
+        } catch (error) { toast(error.message); }
+      });
+      dialog.addEventListener("close", () => dialog.remove());
     } catch (error) { toast(error.message); }
   }
 

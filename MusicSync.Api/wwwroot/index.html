@@ -6,7 +6,7 @@
   <title>MusicSync · Mi Biblioteca</title>
   <script>
     (() => {
-      const saved = localStorage.getItem('musicsync-theme') || 'system';
+      const saved = localStorage.getItem('musicsync-theme') || 'default';
       document.documentElement.dataset.theme = saved;
     })();
   </script>
@@ -124,6 +124,57 @@
     .badge.success { color: var(--success); background: var(--success-soft); }
     .badge.warning { color: var(--warning); background: var(--warning-soft); }
     .badge.danger { color: var(--danger); background: var(--danger-soft); }
+    [data-theme="default"] { color-scheme: light; }
+    [data-theme="winamp"] {
+      color-scheme: dark; --bg:#1a1a1a; --surface:#232323; --surface-2:#2d2d2d; --text:#00cc00;
+      --muted:#008800; --border:rgba(0,200,0,.2); --accent:#00ff00; --accent-strong:#66ff66;
+      --accent-soft:#003300; --success:#00ff00; --success-soft:#003300; --warning:#ccff00;
+      --warning-soft:#333300; --danger:#ff6666; --danger-soft:#330000; --star:#00ff00;
+      --radius:2px; --radius-card:2px; --font-body:ui-monospace,SFMono-Regular,monospace;
+      --font-title:ui-monospace,SFMono-Regular,monospace; --font-mono:ui-monospace,SFMono-Regular,monospace;
+      --shadow:0 0 8px rgba(0,255,0,.15);
+    }
+    [data-theme="vinyl"] {
+      color-scheme: dark; --bg:#1a1208; --surface:#231a0a; --surface-2:#2e2110; --text:#f2dfa8;
+      --muted:#b89a5a; --border:rgba(212,165,90,.2); --accent:#e8a020; --accent-strong:#f2c060;
+      --accent-soft:#2a1e05; --success:#8dcc9b; --success-soft:#17351f; --warning:#f2c060;
+      --warning-soft:#3b2f0b; --danger:#ff9a70; --danger-soft:#431b0e; --star:#e8a020;
+      --radius:6px; --radius-card:8px; --font-body:"Courier New",monospace;
+      --font-title:Georgia,serif; --font-mono:"Courier New",monospace;
+    }
+    [data-theme="neon"] {
+      color-scheme: dark; --bg:#07000f; --surface:#0e0020; --surface-2:#160030; --text:#f0d0ff;
+      --muted:#b080d0; --border:rgba(180,0,255,.2); --accent:#cc00ff; --accent-strong:#e080ff;
+      --accent-soft:#1e0040; --success:#70ffcf; --success-soft:#06382f; --warning:#ffcc00;
+      --warning-soft:#3b2f0b; --danger:#ff66aa; --danger-soft:#43001f; --star:#ff00aa;
+      --radius:6px; --radius-card:8px; --font-body:system-ui,sans-serif;
+      --font-title:system-ui,sans-serif; --font-mono:ui-monospace,monospace;
+      --shadow:0 0 12px rgba(180,0,255,.2);
+    }
+    [data-theme="paper"] {
+      color-scheme: light; --bg:#faf7f0; --surface:#fdf9f2; --surface-2:#f3ede0; --text:#2c2418;
+      --muted:#7a6648; --border:rgba(100,75,40,.14); --accent:#7a3a1a; --accent-strong:#5a2a0a;
+      --accent-soft:#f5ece0; --success:#39734b; --success-soft:#e5f4eb; --warning:#c0781a;
+      --warning-soft:#fff3d7; --danger:#a23a1a; --danger-soft:#fbe8df; --star:#c0781a;
+      --radius:3px; --radius-card:3px; --font-body:Georgia,serif; --font-title:Georgia,serif;
+      --font-mono:"Courier New",monospace;
+    }
+    [data-theme="brutalist"] {
+      color-scheme: light; --bg:#f0f0f0; --surface:#fff; --surface-2:#e0e0e0; --text:#000;
+      --muted:#333; --border:#000; --accent:#ff3300; --accent-strong:#cc2200; --accent-soft:#ffeecc;
+      --success:#087f23; --success-soft:#d8f5de; --warning:#9a5b00; --warning-soft:#fff0c2;
+      --danger:#cc2200; --danger-soft:#ffeecc; --star:#ff3300; --radius:0; --radius-card:0;
+      --font-body:Arial Black,Arial,sans-serif; --font-title:Arial Black,Arial,sans-serif;
+      --font-mono:ui-monospace,monospace; --shadow:3px 3px 0 #000;
+    }
+    [data-theme="winamp"] .card, [data-theme="neon"] .card { box-shadow:var(--shadow); }
+    [data-theme="brutalist"] .card { border-width:3px; box-shadow:var(--shadow); }
+    [data-theme="brutalist"] .topbar { border-bottom-width:3px; }
+    [data-theme="winamp"] .topbar-title, [data-theme="neon"] .topbar-title { text-shadow:0 0 8px var(--accent); }
+    .theme-grid { display:grid; grid-template-columns:repeat(6, minmax(56px,1fr)); gap:8px; margin-top:14px; }
+    .theme-choice { border:1px solid var(--border); border-radius:var(--radius); padding:8px 4px; color:var(--text); background:var(--surface-2); cursor:pointer; font-size:11px; }
+    .theme-choice.active { border:2px solid var(--accent); color:var(--accent); }
+    .theme-swatch { display:block; width:24px; height:24px; margin:0 auto 5px; border-radius:50%; background:var(--swatch); border:1px solid var(--border); }
     .rating-stars { display: flex; gap: 1px; margin-top: 6px; }
     .rating-star { border: 0; padding: 0 1px; color: var(--border); background: transparent; font-size: 15px; line-height: 1; cursor: pointer; }
     .rating-star.on { color: var(--star); }
@@ -291,7 +342,7 @@
 
         <section class="view" data-page="settings">
           <div class="hero"><span class="eyebrow">Private service</span><h1>Settings</h1><p>Keep the service secure and configured for your library.</p></div>
-          <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong id="current-user">—</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" id="change-password" style="width:auto">Change password</button><button class="danger-button" id="logout-all">Sign out all sessions</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p id="service-status" style="margin-top:5px">Checking service…</p><p class="hint">Secrets are never displayed in the interface.</p><div style="display:flex;gap:8px;margin-top:12px"><input id="listenbrainz-token" type="password" placeholder="New ListenBrainz token" style="flex:1"><button class="small-button" id="save-token">Save</button></div><button class="ghost-button" id="generate-secret" style="margin-top:10px">Generate application secret</button></article></div>
+          <div class="cards"><article class="card" style="padding:18px"><h2>Session</h2><p style="margin-top:5px">Signed in as <strong id="current-user">—</strong></p><div class="actions" style="justify-content:flex-start;margin-top:16px"><button class="ghost-button" id="change-password" style="width:auto">Change password</button><button class="danger-button" id="logout-all">Sign out all sessions</button></div><h2 style="margin-top:24px">Theme</h2><div class="theme-grid"><button class="theme-choice" data-theme-choice="default"><span class="theme-swatch" style="--swatch:#d4410a"></span>Default</button><button class="theme-choice" data-theme-choice="winamp"><span class="theme-swatch" style="--swatch:#00ff00"></span>Winamp</button><button class="theme-choice" data-theme-choice="vinyl"><span class="theme-swatch" style="--swatch:#e8a020"></span>Vinyl</button><button class="theme-choice" data-theme-choice="neon"><span class="theme-swatch" style="--swatch:#cc00ff"></span>Neon</button><button class="theme-choice" data-theme-choice="paper"><span class="theme-swatch" style="--swatch:#7a3a1a"></span>Paper</button><button class="theme-choice" data-theme-choice="brutalist"><span class="theme-swatch" style="--swatch:#ff3300"></span>Brutalist</button></div></article><article class="card" style="padding:18px"><h2>Service</h2><p id="service-status" style="margin-top:5px">Checking service…</p><p class="hint">Secrets are never displayed in the interface.</p><div style="display:flex;gap:8px;margin-top:12px"><input id="listenbrainz-token" type="password" placeholder="New ListenBrainz token" style="flex:1"><button class="small-button" id="save-token">Save</button></div><button class="ghost-button" id="generate-secret" style="margin-top:10px">Generate application secret</button></article></div>
         </section>
 
         <section class="view" data-page="analytics">

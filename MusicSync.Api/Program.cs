@@ -155,6 +155,7 @@ builder.Services.AddScoped<AnalyticsService>();
 builder.Services.AddScoped<YouTubeLinkService>();
 builder.Services.AddScoped<RatingService>();
 builder.Services.AddScoped<AlbumLibraryService>();
+builder.Services.AddScoped<LibraryMetadataService>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

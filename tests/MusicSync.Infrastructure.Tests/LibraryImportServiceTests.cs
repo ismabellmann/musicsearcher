@@ -584,5 +584,6 @@ public sealed class LibraryImportServiceTests : IAsyncLifetime, IDisposable
         public Task<IReadOnlyList<TrackInfo>> SearchArtistsAsync(string query, CancellationToken ct) => throw new NotSupportedException();
         public Task<AlbumDetail?> GetAlbumAsync(Guid releaseGroupMbid, CancellationToken ct) => throw new NotSupportedException();
         public Task<TrackInfo?> LookupByIsrcAsync(string isrc, CancellationToken ct) => throw new NotSupportedException();
+        public Task<TrackInfo?> GetRecordingAsync(Guid recordingMbid, CancellationToken ct) => throw new NotSupportedException();
     }
 }

@@ -35,6 +35,9 @@ public class Track
     [Column(TypeName = "real")]
     public double? MusicBrainzRating { get; set; }
 
+    [MaxLength(500)]
+    public string? Genre { get; set; }
+
     /// <summary>Origin of a track that has no MusicBrainz recording, for example a YouTube video URL.</summary>
     [MaxLength(500)]
     public string? SourceUrl { get; set; }

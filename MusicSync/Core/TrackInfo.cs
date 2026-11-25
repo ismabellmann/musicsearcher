@@ -54,6 +54,9 @@ public record TrackInfo
     /// <summary>Community rating returned by MusicBrainz when available (0-5).</summary>
     public double? MusicBrainzRating { get; init; }
 
+    /// <summary>Normalized MusicBrainz genres, joined with semicolons when multiple exist.</summary>
+    public string? Genre { get; init; }
+
     /// <summary>
     /// Gets a value indicating whether this track is a single (no album).
     /// Determined by checking if AlbumTitle is null/empty AND Artists count is small.

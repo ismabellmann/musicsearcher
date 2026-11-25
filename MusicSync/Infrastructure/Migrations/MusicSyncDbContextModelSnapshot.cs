@@ -535,6 +535,10 @@ namespace MusicSync.Infrastructure.Migrations
                     b.Property<int>("DurationMs")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Genre")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Isrc")
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");

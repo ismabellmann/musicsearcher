@@ -46,6 +46,9 @@ public interface IMetadataProvider
     /// <param name="isrc">ISRC code</param>
     /// <param name="ct">Cancellation token</param>
     Task<TrackInfo?> LookupByIsrcAsync(string isrc, CancellationToken ct);
+
+    /// <summary>Gets detailed recording metadata, including genres and community rating when available.</summary>
+    Task<TrackInfo?> GetRecordingAsync(Guid recordingMbid, CancellationToken ct);
 }
 
 /// <summary>

@@ -157,6 +157,18 @@ public class MusicBrainzClient : IMetadataProvider
         return track;
     }
 
+    public async Task<TrackInfo?> GetRecordingAsync(Guid recordingMbid, CancellationToken ct)
+    {
+        var key = "recording-detail:" + recordingMbid.ToString("D");
+        if (TryGetCached(key, out var cached))
+            return ParseRecordingDetail(cached);
+
+        var content = await GetContentAsync(BuildRecordingUri(recordingMbid), "recording detail", true, ct);
+        if (content is null) return null;
+        PutCached(key, content);
+        return ParseRecordingDetail(content);
+    }
+
     // Helper methods
 
     private const int MaxAttempts = 3;
@@ -269,6 +281,17 @@ public class MusicBrainzClient : IMetadataProvider
         return new System.Uri($"https://musicbrainz.org/ws/2/release/{releaseMbid}?inc=recordings+artist-credits+ratings&fmt=json", System.UriKind.Absolute);
     }
 
+    private System.Uri BuildRecordingUri(Guid recordingMbid) =>
+        new($"https://musicbrainz.org/ws/2/recording/{recordingMbid}?inc=genres+tags+ratings+releases&fmt=json");
+
+    private static TrackInfo? ParseRecordingDetail(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.ValueKind == JsonValueKind.Object
+            ? ParseTrack(document.RootElement)
+            : null;
+    }
+
     private static Guid ParseFirstReleaseId(string json)
     {
         using var document = JsonDocument.Parse(json);
@@ -368,7 +391,8 @@ public class MusicBrainzClient : IMetadataProvider
             Year = year ?? ReadYear(release),
             TrackNumber = trackNumber,
             DurationMs = ReadInt(recording, "length") ?? 0,
-            MusicBrainzRating = ReadRating(recording)
+            MusicBrainzRating = ReadRating(recording),
+            Genre = ReadGenres(recording, release)
         };
     }
 
@@ -479,5 +503,30 @@ public class MusicBrainzClient : IMetadataProvider
         return rating.TryGetProperty("value", out var value) && value.TryGetDouble(out var result)
             ? result
             : null;
+    }
+
+    private static string? ReadGenres(JsonElement recording, JsonElement release)
+    {
+        var genres = ReadGenreNames(recording).ToList();
+        if (genres.Count == 0 && release.ValueKind == JsonValueKind.Object)
+            genres = ReadGenreNames(release).ToList();
+        if (genres.Count == 0 && release.ValueKind == JsonValueKind.Object
+            && release.TryGetProperty("release-group", out var group))
+            genres = ReadGenreNames(group).ToList();
+        return genres.Count == 0 ? null : string.Join("; ", genres);
+    }
+
+    private static IEnumerable<string> ReadGenreNames(JsonElement element)
+    {
+        if (!element.TryGetProperty("genre-list", out var list) && !element.TryGetProperty("genres", out list))
+            return Array.Empty<string>();
+        return list.ValueKind != JsonValueKind.Array
+            ? Array.Empty<string>()
+            : list.EnumerateArray()
+                .Select(item => ReadString(item, "name"))
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
     }
 }

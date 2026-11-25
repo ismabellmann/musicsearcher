@@ -181,6 +181,9 @@ public sealed class PlaylistImportServiceTests : IAsyncLifetime, IDisposable
 
         public Task<TrackInfo?> LookupByIsrcAsync(string isrc, CancellationToken ct) =>
             Task.FromResult<TrackInfo?>(null);
+
+        public Task<TrackInfo?> GetRecordingAsync(Guid recordingMbid, CancellationToken ct) =>
+            Task.FromResult<TrackInfo?>(null);
     }
 
     private sealed class FakePopularityProvider : IPopularityProvider

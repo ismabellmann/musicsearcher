@@ -74,7 +74,7 @@ public sealed class LibraryFileService
                 item.file.AddedAt,
                 item.imported != null ? "imported" : "downloaded",
                 item.track.SourceUrl,
-                Array.Empty<string>(), item.track.MusicBrainzRating, 0, null))
+                Array.Empty<string>(), item.track.MusicBrainzRating, 0, null, item.track.Genre))
             .ToListAsync(ct);
 
         var trackIds = rows.Select(item => item.TrackId).ToArray();
@@ -111,7 +111,7 @@ public sealed class LibraryFileService
                                 track.Year, track.Isrc, track.DurationMs, file.Format,
                                 file.Bitrate, file.SizeBytes, file.Sha256, file.AddedAt,
                                 imported != null ? "imported" : "downloaded", track.SourceUrl,
-                                Array.Empty<string>(), track.MusicBrainzRating, 0, null))
+                                Array.Empty<string>(), track.MusicBrainzRating, 0, null, track.Genre))
             .SingleOrDefaultAsync(ct);
         if (result is not null)
         {
@@ -206,7 +206,8 @@ public sealed record LibraryFileView(
     IReadOnlyList<string> Artists,
     double? MusicBrainzRating = null,
     int PersonalRating = 0,
-    string? PersonalNotes = null);
+    string? PersonalNotes = null,
+    string? Genre = null);
 
 public enum DeleteLibraryFileOutcome
 {

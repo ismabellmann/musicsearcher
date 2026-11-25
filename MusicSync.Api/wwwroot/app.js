@@ -440,6 +440,18 @@
     try { await api("/api/library/scan", { method: "POST", body: "{}" }); toast("Library scan complete."); await loadAlbums(); }
     catch (error) { toast(error.message); }
   });
+  document.querySelector("#metadata-refresh")?.addEventListener("click", async () => {
+    const button = document.querySelector("#metadata-refresh");
+    const original = button.textContent;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner" aria-hidden="true"></span> Refreshing…';
+    try {
+      const result = await api("/api/library/metadata/refresh", { method: "POST", body: JSON.stringify({}) });
+      toast(`Metadata: ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed.`);
+      await loadAlbums();
+    } catch (error) { toast(error.message); }
+    finally { button.disabled = false; button.textContent = original; }
+  });
   document.querySelector("#library-filter")?.addEventListener("input", debounce(loadAlbums, 300));
   document.querySelector("#album-sort")?.addEventListener("change", loadAlbums);
   document.querySelector("#album-grid-view")?.addEventListener("click", () => { albumView = "grid"; loadAlbums(); });

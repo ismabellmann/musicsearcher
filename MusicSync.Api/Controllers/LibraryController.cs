@@ -76,7 +76,7 @@ public sealed class LibraryController : ControllerBase
     private static LibraryFileDetail ToDetail(LibraryFileView file) => new(
         file.Id, file.RelativePath, file.RecordingMbid, file.Title, file.ArtistName,
         file.AlbumTitle, file.ReleaseGroupMbid, file.Year, file.Isrc, file.DurationMs,
-        file.Format, file.Bitrate, file.SizeBytes, file.Sha256, file.AddedAt,
+        file.Format, file.Bitrate, file.SizeBytes, file.AddedAt,
         file.Origin, file.SourceUrl, file.Artists, file.MusicBrainzRating, file.PersonalRating, file.PersonalNotes, file.Genre);
 
     [HttpPost("scan")]
@@ -303,7 +303,6 @@ public sealed record LibraryFileDetail(
     string? Format,
     int? Bitrate,
     long SizeBytes,
-    string Sha256,
     DateTime AddedAt,
     string Origin,
     string? SourceUrl,

@@ -491,6 +491,10 @@ Analytics are available at `GET /api/analytics/summary?topArtistLimit=10` and in
 Analytics UI view. The summary is database-backed and does not scan the filesystem during
 requests.
 
+The Library view includes a **Refresh metadata** action that updates MusicBrainz genre and
+score data without changing audio files or personal ratings. File hashes remain internal for
+duplicate detection and are not exposed in user-facing library details.
+
 ## Development
 
 The commands below should be run from the repository root. On immutable systems such as Bazzite, a development container or Distrobox is a convenient way to provide the required .NET runtime and SDK.

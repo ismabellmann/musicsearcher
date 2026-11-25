@@ -473,8 +473,10 @@ Constraints:
 - No external fonts, icon libraries, frontend frameworks, or build step.
 - Use existing CSS variables and theme toggle; add the warm paper/orange and vinyl-inspired visual
   treatment without copying the prototype's localStorage data model or external iTunes requests.
-- Existing tracks without genre metadata remain valid and display `—`; metadata backfill can be a
-  later operation using recording MBIDs.
+- Existing tracks without genre metadata remain valid and display `—`. The Library UI now exposes
+  `Refresh metadata`, which backfills genre and MusicBrainz score data by recording MBID without
+  modifying audio files or personal ratings. User-facing library details do not expose SHA-256
+  hashes; hashes remain internal for duplicate detection.
 
 Tests required: rating CRUD/validation, unique target updates, stable fallback keys, album grouping,
 completeness, genre parsing/fallback, API authorization, and UI/API smoke coverage.
